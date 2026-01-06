@@ -153,25 +153,30 @@ async def main():
         "risk_pct": config.get("risk", {}).get("target_risk_per_trade_percent", 0.02) * 100
     })
 
-    # Create shutdown task
-    async def wait_for_shutdown():
-        await shutdown_event.wait()
-        await graceful_shutdown("Signal received")
+    # Create tasks
+    tasks = [
+        asyncio.create_task(trading_engine.start(), name="trading_engine"),
+        asyncio.create_task(start_api(), name="api"),
+        asyncio.create_task(reconciliation_loop.start(), name="reconciliation"),
+        asyncio.create_task(health_monitor.start(), name="health"),
+    ]
 
-    # Run all components concurrently
+    # Wait for shutdown signal
     try:
-        await asyncio.gather(
-            trading_engine.start(),
-            start_api(),
-            reconciliation_loop.start(),
-            health_monitor.start(),
-            wait_for_shutdown()
-        )
+        await shutdown_event.wait()
     except asyncio.CancelledError:
-        logger.info("Tasks cancelled")
-    except Exception as e:
-        logger.error(f"Error in main loop: {e}")
-        await graceful_shutdown(f"Error: {e}")
+        pass
+
+    # Cancel all running tasks
+    logger.info("Stopping all tasks...")
+    for task in tasks:
+        task.cancel()
+
+    # Wait for tasks to finish cancelling
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Perform graceful shutdown
+    await graceful_shutdown("Signal received")
 
 
 if __name__ == "__main__":
