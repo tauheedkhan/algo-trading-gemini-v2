@@ -1,0 +1,188 @@
+import asyncio
+import signal
+import sys
+import os
+import uvicorn
+from dotenv import load_dotenv
+
+from bot.core.logging_config import setup_logging
+from bot.core.config import load_config
+from bot.core.engine import trading_engine
+from bot.api.dashboard_api import app
+from bot.exchange.binance_client import binance_client
+from bot.state.db import db
+from bot.monitoring.reconciliation import create_reconciliation_loop
+from bot.monitoring.health import create_health_monitor
+from bot.alerts.telegram import telegram_alerter
+
+# Setup logging first (before any other imports that might log)
+setup_logging(log_level="INFO", use_colors=True)
+
+import logging
+logger = logging.getLogger(__name__)
+
+# Global state for graceful shutdown
+shutdown_event = asyncio.Event()
+reconciliation_loop = None
+health_monitor = None
+
+
+async def start_api():
+    """Starts the FastAPI dashboard server."""
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="warning")
+    server = uvicorn.Server(config)
+    await server.serve()
+
+
+async def graceful_shutdown(reason: str = "User requested"):
+    """
+    Performs graceful shutdown:
+    1. Stop all loops
+    2. Close all positions
+    3. Cancel all pending orders
+    4. Send shutdown alert
+    5. Close connections
+    """
+    logger.info(f"Initiating graceful shutdown: {reason}")
+
+    # Stop monitoring loops
+    if reconciliation_loop:
+        reconciliation_loop.stop()
+    if health_monitor:
+        health_monitor.stop()
+
+    positions_closed = 0
+    config = load_config("config.yaml")
+    graceful_config = config.get("graceful_shutdown", {})
+
+    try:
+        # Close all positions if configured
+        if graceful_config.get("close_positions", True):
+            logger.info("Closing all open positions...")
+            positions = await binance_client.fetch_positions()
+
+            for position in positions:
+                symbol = position['symbol']
+                side = position.get('side', '').lower()
+                contracts = abs(float(position.get('contracts', 0)))
+
+                if contracts == 0:
+                    continue
+
+                close_side = 'sell' if side == 'long' else 'buy'
+
+                try:
+                    await binance_client.create_order(
+                        symbol, 'market', close_side, contracts, None,
+                        {'reduceOnly': True}
+                    )
+                    positions_closed += 1
+                    logger.info(f"Closed position for {symbol}")
+                except Exception as e:
+                    logger.error(f"Failed to close position for {symbol}: {e}")
+
+        # Cancel all pending orders if configured
+        if graceful_config.get("cancel_orders", True):
+            logger.info("Cancelling all open orders...")
+            orders = await binance_client.fetch_open_orders()
+
+            for order in orders:
+                try:
+                    await binance_client.cancel_order(order['id'], order['symbol'])
+                    logger.info(f"Cancelled order {order['id']}")
+                except Exception as e:
+                    logger.error(f"Failed to cancel order {order['id']}: {e}")
+
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+
+    # Log shutdown event
+    await db.log_system_event("SHUTDOWN", reason)
+
+    # Send Telegram alert
+    await telegram_alerter.alert_shutdown(reason, positions_closed)
+
+    # Close connections
+    await binance_client.close()
+    await db.close()
+
+    logger.info(f"Graceful shutdown complete. Closed {positions_closed} positions.")
+
+
+def signal_handler(sig, frame):
+    """Handle shutdown signals."""
+    sig_name = signal.Signals(sig).name
+    logger.info(f"Received signal {sig_name}")
+    shutdown_event.set()
+
+
+async def main():
+    global reconciliation_loop, health_monitor
+
+    load_dotenv()
+    config = load_config("config.yaml")
+
+    # Log startup
+    env_type = os.getenv("BINANCE_ENV", "testnet")
+    logger.info(f"Starting Trading Bot in {env_type.upper()} mode")
+
+    # Initialize database
+    await db.connect()
+    await db.log_system_event("START", f"Bot started in {env_type} mode")
+
+    # Initialize exchange client
+    await binance_client.initialize()
+
+    # Create monitoring components
+    reconciliation_loop = create_reconciliation_loop(config)
+    health_monitor = create_health_monitor(config)
+
+    # Verify exchange configuration (non-critical on testnet)
+    try:
+        verification = await health_monitor.verify_exchange_config()
+        if not verification['verified']:
+            logger.warning(f"Exchange config issues detected: {verification['margin_issues']}")
+    except Exception as e:
+        logger.warning(f"Could not verify exchange config (testnet limitation): {e}")
+
+    # Send startup alert
+    await telegram_alerter.alert_startup({
+        "mode": env_type.upper(),
+        "symbols": config.get("symbols", []),
+        "leverage": config.get("risk", {}).get("leverage", 1),
+        "risk_pct": config.get("risk", {}).get("target_risk_per_trade_percent", 0.02) * 100
+    })
+
+    # Create shutdown task
+    async def wait_for_shutdown():
+        await shutdown_event.wait()
+        await graceful_shutdown("Signal received")
+
+    # Run all components concurrently
+    try:
+        await asyncio.gather(
+            trading_engine.start(),
+            start_api(),
+            reconciliation_loop.start(),
+            health_monitor.start(),
+            wait_for_shutdown()
+        )
+    except asyncio.CancelledError:
+        logger.info("Tasks cancelled")
+    except Exception as e:
+        logger.error(f"Error in main loop: {e}")
+        await graceful_shutdown(f"Error: {e}")
+
+
+if __name__ == "__main__":
+    # Setup signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by keyboard interrupt.")
+    except Exception as e:
+        logger.error(f"Fatal error: {e}")
+        sys.exit(1)

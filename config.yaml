@@ -1,0 +1,61 @@
+# Symbol Configuration
+symbols:
+  - BTC/USDT
+  - ETH/USDT
+
+# Timeframes
+timeframes:
+  trend: 1d
+  setup: 4h
+  entry: 1h
+
+# Risk Management (Volatility Targeting)
+risk:
+  target_risk_per_trade_percent: 0.02  # 2% of equity risked per trade
+  max_position_percent: 0.25           # Max 25% of equity per position
+  max_open_positions: 3
+  max_drawdown_daily_percent: 5.0
+  leverage: 10
+  margin_mode: "ISOLATED"
+
+# Regime Settings (Percentiles provided as examples, code will compute dynamic)
+regime:
+  trend_adx_threshold: 25
+  range_adx_threshold: 20
+  volatility_percentile_window: 1000  # Lookback for calculating dynamic percentiles
+
+# Strategy Settings
+strategies:
+  trend_pullback:
+    enabled: true
+    ema_fast: 20
+    ema_slow: 50
+    rsi_min: 40
+    rsi_max: 60
+  
+  range_mean_reversion:
+    enabled: true
+    bb_length: 20
+    bb_std: 2.0
+    rsi_oversold: 30
+    rsi_overbought: 70
+    divergence_lookback: 5
+
+# Reconciliation Settings
+reconciliation:
+  interval_seconds: 60       # Check every 60 seconds
+  auto_add_sl: true          # Analyze market and add SL if missing
+  atr_sl_multiplier: 2.0     # ATR multiplier for calculating SL distance
+
+# Monitoring Settings
+monitoring:
+  heartbeat_interval_seconds: 3600  # Send heartbeat every hour
+
+# Logging Settings
+logging:
+  level: INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Graceful Shutdown Settings
+graceful_shutdown:
+  close_positions: true      # Close all positions on shutdown
+  cancel_orders: true        # Cancel all pending orders on shutdown
