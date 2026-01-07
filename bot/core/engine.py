@@ -2,6 +2,7 @@ import asyncio
 import logging
 from bot.core.config import load_config
 from bot.exchange.binance_client import binance_client
+from bot.exchange.websocket_client import ws_client
 from bot.data.market_data import market_data
 from bot.data.indicators import indicators
 from bot.regime.regime_classifier import regime_classifier
@@ -16,6 +17,7 @@ class TradingEngine:
         self.config = load_config("config.yaml")
         self.symbols = self.config.get("symbols", [])
         self.router = StrategyRouter(self.config)
+        self._ws_initialized = False
 
         # Update risk engine with full config
         risk_config = self.config.get('risk', {})
@@ -28,19 +30,58 @@ class TradingEngine:
         logger.info(f"Risk config: {risk_config.get('target_risk_per_trade_percent')*100}% risk, "
                     f"{risk_config.get('leverage')}x leverage, "
                     f"{risk_config.get('max_position_percent', 0.25)*100:.0f}% max position")
-        
+
+    async def _initialize_websocket(self):
+        """Initialize WebSocket and preload historical data."""
+        if self._ws_initialized:
+            return
+
+        logger.info("Initializing WebSocket and preloading historical data...")
+
+        # Initialize WebSocket for all symbols
+        await ws_client.initialize(self.symbols, timeframes=["1h"])
+
+        # Preload historical data via REST API (one-time)
+        for symbol in self.symbols:
+            try:
+                df = await market_data.get_candles(symbol, "1h", limit=500)
+                if not df.empty:
+                    candles = df.to_dict('records')
+                    await ws_client.preload_candles(symbol, "1h", candles)
+                    logger.info(f"Preloaded {len(candles)} candles for {symbol}")
+                # Small delay between REST calls during preload
+                await asyncio.sleep(0.3)
+            except Exception as e:
+                logger.error(f"Failed to preload {symbol}: {e}")
+
+        self._ws_initialized = True
+        logger.info("WebSocket initialization complete")
+
     async def start(self):
         logger.info("Starting Trading Engine Loop...")
         await db.connect()
         await binance_client.initialize()
-        
-        while True:
-            try:
-                await self.run_cycle()
-            except Exception as e:
-                logger.error(f"Error in trading cycle: {e}")
-            
-            await asyncio.sleep(60) # Run every minute (1H Strategy base)
+
+        # Initialize WebSocket and preload historical data
+        await self._initialize_websocket()
+
+        # Start WebSocket in background task
+        ws_task = asyncio.create_task(ws_client.start())
+
+        # Wait a moment for WebSocket to connect
+        await asyncio.sleep(2)
+
+        try:
+            while True:
+                try:
+                    await self.run_cycle()
+                except Exception as e:
+                    logger.error(f"Error in trading cycle: {e}")
+
+                await asyncio.sleep(60)  # Run every minute (1H Strategy base)
+        finally:
+            await ws_client.stop()
+            ws_task.cancel()
 
     async def run_cycle(self):
         logger.info("Running Analysis Cycle...")
@@ -50,11 +91,15 @@ class TradingEngine:
             logger.warning("Kill-switch is active. Skipping trading cycle.")
             return
 
-        # 1. Update Account Info (Equity)
-        balance = await binance_client.get_balance()
-        equity = float(balance['total']['USDT'])
-        free_balance = float(balance['free']['USDT'])
-        unrealized_pnl = float(balance.get('info', {}).get('totalUnrealizedProfit', 0))
+        # 1. Update Account Info (Equity) - single REST call
+        try:
+            balance = await binance_client.get_balance()
+            equity = float(balance['total']['USDT'])
+            free_balance = float(balance['free']['USDT'])
+            unrealized_pnl = float(balance.get('info', {}).get('totalUnrealizedProfit', 0))
+        except Exception as e:
+            logger.error(f"Failed to fetch balance: {e}")
+            return
 
         # 2. Save equity snapshot and check drawdown
         await db.save_equity_snapshot(
@@ -70,42 +115,44 @@ class TradingEngine:
                 logger.critical("Trading halted due to drawdown limit breach.")
                 return
 
-        # 3. Process Symbols
+        # 3. Fetch positions ONCE for all symbols - single REST call
+        try:
+            current_positions = await binance_client.fetch_positions()
+        except Exception as e:
+            logger.error(f"Failed to fetch positions: {e}")
+            return
+
+        # 4. Process all symbols using WebSocket cached data (NO REST calls)
         for symbol in self.symbols:
-            await self.process_symbol(symbol, equity)
-            
-    async def process_symbol(self, symbol: str, equity: float):
-        # A. Fetch Data
-        df = await market_data.get_candles(symbol, "1h", limit=500)
-        if df.empty:
+            await self.process_symbol(symbol, equity, current_positions)
+
+    async def process_symbol(self, symbol: str, equity: float, current_positions: list):
+        # A. Get candle data from WebSocket cache (NO REST API call)
+        df = await ws_client.get_candles(symbol, "1h")
+        if df.empty or len(df) < 50:
+            candle_count = len(df) if not df.empty else 0
+            logger.warning(f"[{symbol}] Insufficient candle data ({candle_count}/50 needed)")
             return
 
         # B. Calculate Indicators
-        indicators.add_all(df)
-        
+        df = indicators.add_all(df)
+
         # C. Detect Regime
         regime_info = regime_classifier.detect_regime(df, symbol)
-        
+
         # Save Regime to DB
         await db.execute(
             "INSERT INTO regimes (symbol, regime, confidence, features_json) VALUES (?, ?, ?, ?)",
             (symbol, regime_info['regime'], regime_info['confidence'], str(regime_info['features']))
         )
-        
+
         logger.info(f"[{symbol}] Regime: {regime_info['regime']} (Conf: {regime_info['confidence']:.2f})")
-        
+
         # D. Strategy Signal
         signal = self.router.check_signal(df, regime_info)
         signal['symbol'] = symbol
-        
-        # E. Execution
-        # Fetch current positions from exchange
-        try:
-            current_positions = await binance_client.fetch_positions()
-        except Exception as e:
-            logger.error(f"Failed to fetch positions, skipping execution for {symbol}: {e}")
-            return
 
+        # E. Execution (positions already fetched once per cycle)
         if signal["side"] != "NONE":
             await executor.execute_signal(signal, equity, current_positions)
 

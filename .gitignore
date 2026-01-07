@@ -1,3 +1,20 @@
 ssh
 .venv
 .env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+
+# Database (optional - remove if you want to track)
+*.db
