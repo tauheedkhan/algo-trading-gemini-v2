@@ -2,6 +2,14 @@
 symbols:
   - BTC/USDT
   - ETH/USDT
+  - SOL/USDT
+  - XRP/USDT
+  - DOGE/USDT
+  - AVAX/USDT
+  - LINK/USDT
+  - ADA/USDT
+  - MATIC/USDT
+  - DOT/USDT
 
 # Timeframes
 timeframes:
@@ -13,7 +21,7 @@ timeframes:
 risk:
   target_risk_per_trade_percent: 0.20  # 20% of equity risked per trade
   max_position_percent: 0.25           # Max 25% of equity per position
-  max_open_positions: 3
+  max_open_positions: 10
   max_drawdown_daily_percent: 10.0
   leverage: 10
   margin_mode: "ISOLATED"
@@ -32,7 +40,8 @@ strategies:
     ema_slow: 50
     rsi_min: 40
     rsi_max: 60
-  
+    max_sl_percent: 0.05         # Max 5% SL distance - reject signals with larger SL
+
   range_mean_reversion:
     enabled: true
     bb_length: 20
@@ -40,6 +49,7 @@ strategies:
     rsi_oversold: 30
     rsi_overbought: 70
     divergence_lookback: 5
+    max_sl_percent: 0.05         # Max 5% SL distance - reject signals with larger SL
 
 # Reconciliation Settings
 reconciliation:

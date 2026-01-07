@@ -11,6 +11,8 @@ class TrendPullbackStrategy:
         self.ema_slow = self.config.get("ema_slow", 50)
         self.rsi_min = self.config.get("rsi_min", 40)
         self.rsi_max = self.config.get("rsi_max", 60)
+        # Max allowed SL distance as percentage of entry price (e.g., 5% = 0.05)
+        self.max_sl_percent = self.config.get("max_sl_percent", 0.05)
 
     def generate_signal(self, df: pd.DataFrame, regime: str) -> dict:
         """
@@ -50,6 +52,12 @@ class TrendPullbackStrategy:
                 stop_loss = min(current['low'], prev['low']) * 0.995
                 risk = close - stop_loss
 
+                # Sanity check: SL distance should not exceed max_sl_percent of entry
+                sl_distance_pct = risk / close
+                if sl_distance_pct > self.max_sl_percent:
+                    logger.warning(f"Rejecting LONG signal: SL distance {sl_distance_pct:.2%} exceeds max {self.max_sl_percent:.2%}")
+                    return signal
+
                 signal = {
                     "side": "BUY",
                     "entry_price": close,
@@ -69,6 +77,12 @@ class TrendPullbackStrategy:
             if pullback_occurred and bounce_confirmed and rsi_valid and was_below:
                 stop_loss = max(current['high'], prev['high']) * 1.005
                 risk = stop_loss - close
+
+                # Sanity check: SL distance should not exceed max_sl_percent of entry
+                sl_distance_pct = risk / close
+                if sl_distance_pct > self.max_sl_percent:
+                    logger.warning(f"Rejecting SHORT signal: SL distance {sl_distance_pct:.2%} exceeds max {self.max_sl_percent:.2%}")
+                    return signal
 
                 signal = {
                     "side": "SELL",
