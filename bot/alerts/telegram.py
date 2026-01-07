@@ -127,6 +127,42 @@ class TelegramAlerter:
         )
         await self.send_message(message)
 
+    async def send_config(self, config: dict, env_type: str):
+        """Send full configuration to Telegram on startup."""
+        risk = config.get("risk", {})
+        strategies = config.get("strategies", {})
+        regime = config.get("regime", {})
+        timeframes = config.get("timeframes", {})
+
+        message = (
+            f"⚙️ <b>Loaded Configuration</b>\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Environment:</b> {env_type.upper()}\n"
+            f"<b>Symbols:</b> {', '.join(config.get('symbols', []))}\n\n"
+
+            f"<b>📊 Timeframes:</b>\n"
+            f"  • Trend: {timeframes.get('trend', 'N/A')}\n"
+            f"  • Setup: {timeframes.get('setup', 'N/A')}\n"
+            f"  • Entry: {timeframes.get('entry', 'N/A')}\n\n"
+
+            f"<b>⚠️ Risk Management:</b>\n"
+            f"  • Risk/Trade: {risk.get('target_risk_per_trade_percent', 0) * 100:.1f}%\n"
+            f"  • Max Position: {risk.get('max_position_percent', 0) * 100:.1f}%\n"
+            f"  • Max Open Positions: {risk.get('max_open_positions', 0)}\n"
+            f"  • Max Daily Drawdown: {risk.get('max_drawdown_daily_percent', 0)}%\n"
+            f"  • Leverage: {risk.get('leverage', 1)}x\n"
+            f"  • Margin Mode: {risk.get('margin_mode', 'N/A')}\n\n"
+
+            f"<b>📈 Strategies:</b>\n"
+            f"  • Trend Pullback: {'✅' if strategies.get('trend_pullback', {}).get('enabled') else '❌'}\n"
+            f"  • Range Mean Rev: {'✅' if strategies.get('range_mean_reversion', {}).get('enabled') else '❌'}\n\n"
+
+            f"<b>🎯 Regime Thresholds:</b>\n"
+            f"  • Trend ADX: {regime.get('trend_adx_threshold', 'N/A')}\n"
+            f"  • Range ADX: {regime.get('range_adx_threshold', 'N/A')}"
+        )
+        await self.send_message(message)
+
     async def alert_shutdown(self, reason: str, positions_closed: int = 0):
         """Alert when bot shuts down."""
         message = (

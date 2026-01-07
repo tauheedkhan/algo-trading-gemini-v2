@@ -116,6 +116,42 @@ def signal_handler(sig, frame):
     shutdown_event.set()
 
 
+def print_config(config: dict, env_type: str):
+    """Print loaded configuration to console."""
+    risk = config.get("risk", {})
+    strategies = config.get("strategies", {})
+    regime = config.get("regime", {})
+    timeframes = config.get("timeframes", {})
+
+    print("\n" + "=" * 50)
+    print("           LOADED CONFIGURATION")
+    print("=" * 50)
+    print(f"Environment: {env_type.upper()}")
+    print(f"Symbols: {', '.join(config.get('symbols', []))}")
+    print("-" * 50)
+    print("TIMEFRAMES:")
+    print(f"  Trend:    {timeframes.get('trend', 'N/A')}")
+    print(f"  Setup:    {timeframes.get('setup', 'N/A')}")
+    print(f"  Entry:    {timeframes.get('entry', 'N/A')}")
+    print("-" * 50)
+    print("RISK MANAGEMENT:")
+    print(f"  Risk/Trade:         {risk.get('target_risk_per_trade_percent', 0) * 100:.1f}%")
+    print(f"  Max Position:       {risk.get('max_position_percent', 0) * 100:.1f}%")
+    print(f"  Max Open Positions: {risk.get('max_open_positions', 0)}")
+    print(f"  Max Daily Drawdown: {risk.get('max_drawdown_daily_percent', 0)}%")
+    print(f"  Leverage:           {risk.get('leverage', 1)}x")
+    print(f"  Margin Mode:        {risk.get('margin_mode', 'N/A')}")
+    print("-" * 50)
+    print("STRATEGIES:")
+    print(f"  Trend Pullback:     {'Enabled' if strategies.get('trend_pullback', {}).get('enabled') else 'Disabled'}")
+    print(f"  Range Mean Rev:     {'Enabled' if strategies.get('range_mean_reversion', {}).get('enabled') else 'Disabled'}")
+    print("-" * 50)
+    print("REGIME THRESHOLDS:")
+    print(f"  Trend ADX:          {regime.get('trend_adx_threshold', 'N/A')}")
+    print(f"  Range ADX:          {regime.get('range_adx_threshold', 'N/A')}")
+    print("=" * 50 + "\n")
+
+
 async def main():
     global reconciliation_loop, health_monitor
 
@@ -125,6 +161,9 @@ async def main():
     # Log startup
     env_type = os.getenv("BINANCE_ENV", "testnet")
     logger.info(f"Starting Trading Bot in {env_type.upper()} mode")
+
+    # Print loaded config to console
+    print_config(config, env_type)
 
     # Initialize database
     await db.connect()
@@ -145,13 +184,14 @@ async def main():
     except Exception as e:
         logger.warning(f"Could not verify exchange config (testnet limitation): {e}")
 
-    # Send startup alert
+    # Send startup alert and config to Telegram
     await telegram_alerter.alert_startup({
         "mode": env_type.upper(),
         "symbols": config.get("symbols", []),
         "leverage": config.get("risk", {}).get("leverage", 1),
         "risk_pct": config.get("risk", {}).get("target_risk_per_trade_percent", 0.02) * 100
     })
+    await telegram_alerter.send_config(config, env_type)
 
     # Create tasks
     tasks = [
