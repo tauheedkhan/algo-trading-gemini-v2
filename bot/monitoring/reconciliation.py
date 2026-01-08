@@ -15,7 +15,9 @@ class ReconciliationLoop:
         self.config = config
         self.interval_seconds = config.get("reconciliation", {}).get("interval_seconds", 60)
         self.auto_add_sl = config.get("reconciliation", {}).get("auto_add_sl", True)
+        self.auto_add_tp = config.get("reconciliation", {}).get("auto_add_tp", True)
         self.atr_sl_multiplier = config.get("reconciliation", {}).get("atr_sl_multiplier", 2.0)
+        self.atr_tp_multiplier = config.get("reconciliation", {}).get("atr_tp_multiplier", 3.0)
         self._running = False
 
     async def start(self):
@@ -102,8 +104,16 @@ class ReconciliationLoop:
                 await self._log_reconciliation_action(symbol, issue, action)
 
             if not has_tp:
-                # TP missing is less critical, just log warning
-                logger.warning(f"[{symbol}] Missing TAKE_PROFIT_MARKET order (not auto-adding)")
+                issue = "Missing TAKE_PROFIT_MARKET order"
+                logger.warning(f"[{symbol}] {issue}")
+
+                if self.auto_add_tp:
+                    action = await self._add_take_profit(symbol, side, contracts, entry_price)
+                else:
+                    action = "Alert only (auto_add_tp disabled)"
+
+                await telegram_alerter.alert_reconciliation_issue(symbol, issue, action)
+                await self._log_reconciliation_action(symbol, issue, action)
 
         # 2. Cancel orphan orders (reduceOnly orders with no position)
         for symbol, orders in orders_by_symbol.items():
@@ -167,6 +177,51 @@ class ReconciliationLoop:
 
         except Exception as e:
             logger.error(f"Failed to add stop-loss for {symbol}: {e}")
+            return f"Failed: {str(e)}"
+
+    async def _add_take_profit(self, symbol: str, side: str, size: float, entry_price: float) -> str:
+        """
+        Analyzes market and adds a reasonable take-profit based on ATR.
+        Returns action description.
+        """
+        try:
+            # Fetch recent candles for ATR calculation
+            df = await market_data.get_candles(symbol, "1h", limit=50)
+            if df.empty:
+                return "Failed: Could not fetch market data"
+
+            indicators.add_all(df)
+
+            # Get ATR for TP distance
+            atr = df['ATR_14'].iloc[-1] if 'ATR_14' in df.columns else None
+            if atr is None or atr <= 0:
+                # Fallback: use 3% of entry price
+                atr = entry_price * 0.03
+
+            # Calculate TP price based on position side
+            tp_distance = atr * self.atr_tp_multiplier
+            if side == 'long':
+                tp_price = entry_price + tp_distance
+                tp_side = 'sell'
+            else:  # short
+                tp_price = entry_price - tp_distance
+                tp_side = 'buy'
+
+            # Round TP price to reasonable precision
+            tp_price = round(tp_price, 2)
+
+            logger.info(f"[{symbol}] Adding TP at {tp_price} (ATR: {atr:.2f}, Entry: {entry_price})")
+
+            # Place take-profit order
+            await binance_client.create_order(
+                symbol, 'TAKE_PROFIT_MARKET', tp_side, size, None,
+                {'stopPrice': tp_price, 'reduceOnly': True}
+            )
+
+            return f"Added TP at ${tp_price:,.2f} (ATR-based)"
+
+        except Exception as e:
+            logger.error(f"Failed to add take-profit for {symbol}: {e}")
             return f"Failed: {str(e)}"
 
     async def _log_reconciliation_action(self, symbol: str, issue: str, action: str):

@@ -95,12 +95,12 @@ class Executor:
                 {'stopPrice': take_profit, 'reduceOnly': True}
             )
 
-            # Verify protective orders were placed
+            # Verify protective orders were placed (reconciliation loop will auto-add if missing)
             if not sl_order:
-                logger.error(f"[{symbol}] Failed to place SL order - reconciliation will handle")
+                logger.error(f"[{symbol}] Failed to place SL order - reconciliation will auto-add")
 
             if not tp_order:
-                logger.warning(f"[{symbol}] Failed to place TP order - reconciliation will handle")
+                logger.warning(f"[{symbol}] Failed to place TP order - reconciliation will auto-add")
 
             # DB Logging
             await db.execute(
