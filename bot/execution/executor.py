@@ -51,6 +51,11 @@ class Executor:
         strategy = signal.get("reason", "Unknown")
         regime = signal.get("regime", "UNKNOWN")
 
+        # Validate that stop_loss and take_profit are present
+        if stop_loss is None or take_profit is None:
+            logger.error(f"[{symbol}] Signal missing SL or TP - stop_loss={stop_loss}, take_profit={take_profit}")
+            return None
+
         size = self.risk_engine.calculate_position_size(
             equity,
             entry_price,
@@ -95,12 +100,12 @@ class Executor:
                 {'stopPrice': take_profit, 'reduceOnly': True}
             )
 
-            # Verify protective orders were placed
+            # Verify protective orders were placed (reconciliation loop will auto-add if missing)
             if not sl_order:
-                logger.error(f"[{symbol}] Failed to place SL order - reconciliation will handle")
+                logger.error(f"[{symbol}] Failed to place SL order - reconciliation will auto-add")
 
             if not tp_order:
-                logger.warning(f"[{symbol}] Failed to place TP order - reconciliation will handle")
+                logger.warning(f"[{symbol}] Failed to place TP order - reconciliation will auto-add")
 
             # DB Logging
             await db.execute(

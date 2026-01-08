@@ -282,8 +282,10 @@ class BinanceClient:
             order_params['timeInForce'] = 'GTC'
 
         # Add stop price for stop orders
-        if 'stopPrice' in params:
+        if 'stopPrice' in params and params['stopPrice'] is not None:
             order_params['stopPrice'] = self.round_price(symbol, params['stopPrice'])
+        elif order_type.upper() in ['STOP_MARKET', 'TAKE_PROFIT_MARKET', 'STOP', 'TAKE_PROFIT']:
+            raise ValueError(f"stopPrice is required for {order_type} orders but was None")
 
         # Add reduce only
         if params.get('reduceOnly'):
