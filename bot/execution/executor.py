@@ -51,6 +51,11 @@ class Executor:
         strategy = signal.get("reason", "Unknown")
         regime = signal.get("regime", "UNKNOWN")
 
+        # Validate that stop_loss and take_profit are present
+        if stop_loss is None or take_profit is None:
+            logger.error(f"[{symbol}] Signal missing SL or TP - stop_loss={stop_loss}, take_profit={take_profit}")
+            return None
+
         size = self.risk_engine.calculate_position_size(
             equity,
             entry_price,
