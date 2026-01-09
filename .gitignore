@@ -18,3 +18,7 @@ __pycache__/
 
 # Database (optional - remove if you want to track)
 *.db
+
+# Log files
+logs/
+*.log

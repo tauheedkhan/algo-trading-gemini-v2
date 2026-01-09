@@ -53,13 +53,16 @@ strategies:
 
 # Reconciliation Settings
 reconciliation:
-  interval_seconds: 60       # Check every 60 seconds
+  interval_seconds: 180      # Check every 3 minutes to reduce API load
   auto_add_sl: true          # Analyze market and add SL if missing
+  auto_add_tp: true          # Analyze market and add TP if missing
   atr_sl_multiplier: 2.0     # ATR multiplier for calculating SL distance
+  atr_tp_multiplier: 3.0     # ATR multiplier for calculating TP distance
 
 # Monitoring Settings
 monitoring:
   heartbeat_interval_seconds: 3600  # Send heartbeat every hour
+  position_check_interval: 120      # Check positions every 2 minutes to reduce API load
 
 # Logging Settings
 logging:

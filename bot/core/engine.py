@@ -19,7 +19,7 @@ class TradingEngine:
         self.router = StrategyRouter(self.config)
         self._ws_initialized = False
 
-        # Update risk engine with full config
+        # Update risk engine and executor with full config
         risk_config = self.config.get('risk', {})
         executor.risk_engine.target_risk_pct = risk_config.get('target_risk_per_trade_percent', 0.02)
         executor.risk_engine.max_positions = risk_config.get('max_open_positions', 3)
@@ -27,9 +27,13 @@ class TradingEngine:
         executor.risk_engine.max_drawdown_daily_pct = risk_config.get('max_drawdown_daily_percent', 5.0) / 100
         executor.risk_engine.max_position_pct = risk_config.get('max_position_percent', 0.25)
 
+        # Set margin mode from config (ISOLATED or CROSSED)
+        executor.margin_mode = risk_config.get('margin_mode', 'ISOLATED').upper()
+
         logger.info(f"Risk config: {risk_config.get('target_risk_per_trade_percent')*100}% risk, "
                     f"{risk_config.get('leverage')}x leverage, "
-                    f"{risk_config.get('max_position_percent', 0.25)*100:.0f}% max position")
+                    f"{risk_config.get('max_position_percent', 0.25)*100:.0f}% max position, "
+                    f"{executor.margin_mode} margin")
 
     async def _initialize_websocket(self):
         """Initialize WebSocket and preload historical data."""
@@ -71,11 +75,20 @@ class TradingEngine:
         # Wait a moment for WebSocket to connect
         await asyncio.sleep(2)
 
+        consecutive_errors = 0
         try:
             while True:
                 try:
                     await self.run_cycle()
+                    consecutive_errors = 0
                 except Exception as e:
+                    consecutive_errors += 1
+                    # If rate limited, wait longer before retry
+                    if "Rate limited" in str(e) or "418" in str(e) or "429" in str(e):
+                        wait_time = min(60 * (2 ** consecutive_errors), 300)
+                        logger.warning(f"Trading engine backing off for {wait_time}s due to rate limit")
+                        await asyncio.sleep(wait_time)
+                        continue
                     logger.error(f"Error in trading cycle: {e}")
 
                 await asyncio.sleep(60)  # Run every minute (1H Strategy base)

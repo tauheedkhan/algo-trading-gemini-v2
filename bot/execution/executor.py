@@ -14,6 +14,8 @@ class Executor:
         self.risk_engine = RiskEngine(config)
         self.client = binance_client
         self.leverage_set_cache = set()
+        self.margin_mode_cache = set()  # Track symbols with margin mode set
+        self.margin_mode = config.get('risk', {}).get('margin_mode', 'ISOLATED').upper()
         self.max_retries = 3
         self.retry_delay = 1.0  # seconds
 
@@ -87,7 +89,8 @@ class Executor:
         logger.info(f"EXECUTING [{symbol}] {side} Size: {size:.4f} @ {entry_price} SL: {stop_loss} TP: {take_profit}")
 
         try:
-            # Set Leverage (idempotent)
+            # Set Margin Mode and Leverage (idempotent)
+            await self._ensure_margin_mode(symbol)
             await self._ensure_leverage(symbol)
 
             # Place Market Entry with retry
@@ -160,6 +163,16 @@ class Executor:
                 ("executor", f"[{symbol}] {e}")
             )
             return None
+
+    async def _ensure_margin_mode(self, symbol: str):
+        """Sets margin mode (ISOLATED/CROSS) if not already cached."""
+        if symbol not in self.margin_mode_cache:
+            success = await self.client.set_margin_mode(symbol, self.margin_mode)
+            if success:
+                self.margin_mode_cache.add(symbol)
+                logger.info(f"[{symbol}] Margin mode set to {self.margin_mode}")
+            else:
+                logger.warning(f"[{symbol}] Failed to set margin mode to {self.margin_mode}")
 
     async def _ensure_leverage(self, symbol: str):
         """Sets leverage if not already cached."""

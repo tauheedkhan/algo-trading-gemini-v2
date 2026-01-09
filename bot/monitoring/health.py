@@ -28,6 +28,13 @@ class HealthMonitor:
                 self._consecutive_errors = 0
             except Exception as e:
                 self._consecutive_errors += 1
+                # If rate limited, back off and skip alerting about the error
+                if "Rate limited" in str(e) or "418" in str(e) or "429" in str(e):
+                    wait_time = min(self.heartbeat_interval, 300)
+                    logger.warning(f"Health monitor skipping due to rate limit, waiting {wait_time}s")
+                    await asyncio.sleep(wait_time)
+                    continue
+
                 logger.error(f"Health check error ({self._consecutive_errors}): {e}")
 
                 if self._consecutive_errors >= self._max_consecutive_errors:

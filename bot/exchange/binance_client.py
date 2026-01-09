@@ -3,8 +3,10 @@ import time
 import hmac
 import hashlib
 import logging
+import asyncio
 from urllib.parse import urlencode
-from typing import Optional
+from typing import Optional, Dict, Any
+from datetime import datetime, timedelta
 import httpx
 from dotenv import load_dotenv
 
@@ -14,12 +16,67 @@ logger = logging.getLogger(__name__)
 TESTNET_BASE_URL = "https://testnet.binancefuture.com"
 MAINNET_BASE_URL = "https://fapi.binance.com"
 
+# Rate limiting constants
+MAX_REQUESTS_PER_MINUTE = 1200  # Conservative limit (Binance allows 2400 for most endpoints)
+RATE_LIMIT_WINDOW = 60  # seconds
+
+
+class APICache:
+    """Shared cache for API responses to reduce duplicate calls."""
+
+    def __init__(self):
+        self._cache: Dict[str, Any] = {}
+        self._timestamps: Dict[str, datetime] = {}
+        self._ttl: Dict[str, int] = {
+            'account_data': 30,  # 30 seconds - raw account data
+            'balance': 30,       # 30 seconds
+            'positions': 30,     # 30 seconds
+            'open_orders': 30,   # 30 seconds
+        }
+
+    def get(self, key: str) -> Optional[Any]:
+        """Get cached value if not expired."""
+        if key not in self._cache:
+            return None
+
+        ttl = self._ttl.get(key.split(':')[0], 5)
+        if datetime.now() - self._timestamps.get(key, datetime.min) > timedelta(seconds=ttl):
+            return None
+
+        return self._cache[key]
+
+    def set(self, key: str, value: Any):
+        """Cache a value."""
+        self._cache[key] = value
+        self._timestamps[key] = datetime.now()
+
+    def invalidate(self, key: str = None):
+        """Invalidate cache entry or all entries."""
+        if key:
+            self._cache.pop(key, None)
+            self._timestamps.pop(key, None)
+        else:
+            self._cache.clear()
+            self._timestamps.clear()
+
 
 class BinanceClient:
     def __init__(self):
         self._load_env()
         self.client: Optional[httpx.AsyncClient] = None
         self._symbol_info: dict = {}  # Cache for symbol precision info
+
+        # Rate limiting
+        self._request_times: list = []
+        self._rate_limit_lock = asyncio.Lock()
+
+        # Backoff state
+        self._backoff_until: Optional[datetime] = None
+        self._consecutive_errors = 0
+        self._max_backoff_seconds = 300  # 5 minutes max backoff
+
+        # Shared cache
+        self.cache = APICache()
 
     def _load_env(self):
         load_dotenv()
@@ -64,10 +121,44 @@ class BinanceClient:
             await self.client.aclose()
             logger.info("Binance client connection closed")
 
+    async def _check_rate_limit(self):
+        """Check and enforce rate limiting."""
+        async with self._rate_limit_lock:
+            now = time.time()
+            # Remove old requests outside the window
+            self._request_times = [t for t in self._request_times if now - t < RATE_LIMIT_WINDOW]
+
+            if len(self._request_times) >= MAX_REQUESTS_PER_MINUTE:
+                wait_time = RATE_LIMIT_WINDOW - (now - self._request_times[0])
+                if wait_time > 0:
+                    logger.warning(f"Rate limit approaching, waiting {wait_time:.1f}s")
+                    await asyncio.sleep(wait_time)
+
+            self._request_times.append(now)
+
+    async def _check_backoff(self):
+        """Check if we're in backoff period."""
+        if self._backoff_until and datetime.now() < self._backoff_until:
+            wait_seconds = (self._backoff_until - datetime.now()).total_seconds()
+            logger.warning(f"In backoff period, waiting {wait_seconds:.1f}s")
+            await asyncio.sleep(wait_seconds)
+
+    def _calculate_backoff(self) -> float:
+        """Calculate exponential backoff time."""
+        base_delay = 2
+        backoff = min(base_delay * (2 ** self._consecutive_errors), self._max_backoff_seconds)
+        return backoff
+
     async def _request(self, method: str, endpoint: str, params: dict = None, signed: bool = True) -> dict:
-        """Makes an API request to Binance."""
+        """Makes an API request to Binance with rate limiting and backoff."""
         if not self.client:
             await self.initialize()
+
+        # Check backoff first
+        await self._check_backoff()
+
+        # Then check rate limit
+        await self._check_rate_limit()
 
         params = params or {}
 
@@ -86,11 +177,37 @@ class BinanceClient:
                 raise ValueError(f"Unsupported HTTP method: {method}")
 
             response.raise_for_status()
+
+            # Reset error count on success
+            self._consecutive_errors = 0
+            self._backoff_until = None
+
             return response.json()
 
         except httpx.HTTPStatusError as e:
+            status_code = e.response.status_code
             error_data = e.response.json() if e.response.content else {}
-            logger.error(f"Binance API error: {e.response.status_code} - {error_data}")
+
+            # Handle rate limiting (429) and IP ban (418)
+            if status_code in [418, 429]:
+                self._consecutive_errors += 1
+                backoff_seconds = self._calculate_backoff()
+
+                # Check for Retry-After header
+                retry_after = e.response.headers.get('Retry-After')
+                if retry_after:
+                    try:
+                        backoff_seconds = max(backoff_seconds, int(retry_after))
+                    except ValueError:
+                        pass
+
+                self._backoff_until = datetime.now() + timedelta(seconds=backoff_seconds)
+                logger.error(f"Rate limited (HTTP {status_code}). Backing off for {backoff_seconds}s. "
+                            f"Consecutive errors: {self._consecutive_errors}")
+
+                raise Exception(f"Rate limited: {error_data.get('msg', str(e))}. Retry after {backoff_seconds}s")
+
+            logger.error(f"Binance API error: {status_code} - {error_data}")
             raise Exception(f"Binance API error: {error_data.get('msg', str(e))}")
         except Exception as e:
             logger.error(f"Request failed: {e}")
@@ -199,9 +316,31 @@ class BinanceClient:
 
     # ============ Account Endpoints ============
 
-    async def get_balance(self) -> dict:
-        """Fetches account balance."""
+    async def _fetch_account_data(self, use_cache: bool = True) -> dict:
+        """Fetches account data with caching to reduce duplicate API calls."""
+        cache_key = 'account_data'
+
+        if use_cache:
+            cached = self.cache.get(cache_key)
+            if cached:
+                logger.debug("Using cached account data")
+                return cached
+
         data = await self._request("GET", "/fapi/v2/account")
+        self.cache.set(cache_key, data)
+        return data
+
+    async def get_balance(self, use_cache: bool = True) -> dict:
+        """Fetches account balance with caching."""
+        cache_key = 'balance'
+
+        if use_cache:
+            cached = self.cache.get(cache_key)
+            if cached:
+                logger.debug("Using cached balance")
+                return cached
+
+        data = await self._fetch_account_data(use_cache=False)
 
         usdt_balance = 0
         usdt_available = 0
@@ -213,15 +352,26 @@ class BinanceClient:
                 usdt_available = float(asset.get('availableBalance', 0))
                 break
 
-        return {
+        result = {
             'total': {'USDT': usdt_balance + unrealized_pnl},
             'free': {'USDT': usdt_available},
             'info': {'totalUnrealizedProfit': unrealized_pnl}
         }
 
-    async def fetch_positions(self) -> list:
-        """Fetches all open positions."""
-        data = await self._request("GET", "/fapi/v2/account")
+        self.cache.set(cache_key, result)
+        return result
+
+    async def fetch_positions(self, use_cache: bool = True) -> list:
+        """Fetches all open positions with caching."""
+        cache_key = 'positions'
+
+        if use_cache:
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                logger.debug("Using cached positions")
+                return cached
+
+        data = await self._fetch_account_data(use_cache=False)
         positions = data.get('positions', [])
 
         result = []
@@ -239,17 +389,27 @@ class BinanceClient:
                     'leverage': int(p.get('leverage', 1)),
                     'info': p
                 })
+
+        self.cache.set(cache_key, result)
         return result
 
-    async def fetch_open_orders(self, symbol: str = None) -> list:
-        """Fetches all open orders."""
+    async def fetch_open_orders(self, symbol: str = None, use_cache: bool = True) -> list:
+        """Fetches all open orders with caching."""
+        cache_key = f'open_orders:{symbol or "all"}'
+
+        if use_cache:
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                logger.debug(f"Using cached open orders for {symbol or 'all'}")
+                return cached
+
         params = {}
         if symbol:
             params['symbol'] = symbol.replace("/", "")
 
         data = await self._request("GET", "/fapi/v1/openOrders", params)
 
-        return [
+        result = [
             {
                 'id': str(order.get('orderId')),
                 'symbol': order.get('symbol'),
@@ -264,6 +424,72 @@ class BinanceClient:
             }
             for order in data
         ]
+
+        self.cache.set(cache_key, result)
+        return result
+
+    async def fetch_user_trades(self, symbol: str, limit: int = 10) -> list:
+        """Fetches recent user trades for a symbol to determine fill info."""
+        symbol_clean = symbol.replace("/", "")
+
+        params = {
+            'symbol': symbol_clean,
+            'limit': limit
+        }
+
+        try:
+            data = await self._request("GET", "/fapi/v1/userTrades", params)
+
+            return [
+                {
+                    'id': str(trade.get('id')),
+                    'orderId': str(trade.get('orderId')),
+                    'symbol': trade.get('symbol'),
+                    'side': trade.get('side').lower(),
+                    'price': float(trade.get('price', 0)),
+                    'qty': float(trade.get('qty', 0)),
+                    'realizedPnl': float(trade.get('realizedPnl', 0)),
+                    'commission': float(trade.get('commission', 0)),
+                    'commissionAsset': trade.get('commissionAsset'),
+                    'time': trade.get('time'),
+                    'buyer': trade.get('buyer', False),
+                    'maker': trade.get('maker', False),
+                    'info': trade
+                }
+                for trade in data
+            ]
+        except Exception as e:
+            logger.error(f"Failed to fetch user trades for {symbol}: {e}")
+            return []
+
+    async def fetch_order(self, symbol: str, order_id: str) -> dict:
+        """Fetches a specific order by ID to get its type."""
+        symbol_clean = symbol.replace("/", "")
+
+        params = {
+            'symbol': symbol_clean,
+            'orderId': order_id
+        }
+
+        try:
+            data = await self._request("GET", "/fapi/v1/order", params)
+
+            return {
+                'id': str(data.get('orderId')),
+                'symbol': data.get('symbol'),
+                'type': data.get('type'),
+                'origType': data.get('origType'),  # Original order type
+                'side': data.get('side').lower(),
+                'price': float(data.get('price', 0)),
+                'avgPrice': float(data.get('avgPrice', 0)),
+                'stopPrice': float(data.get('stopPrice', 0)),
+                'status': data.get('status'),
+                'reduceOnly': data.get('reduceOnly', False),
+                'info': data
+            }
+        except Exception as e:
+            logger.error(f"Failed to fetch order {order_id} for {symbol}: {e}")
+            return {}
 
     # ============ Trading Endpoints ============
 
@@ -305,6 +531,9 @@ class BinanceClient:
         data = await self._request("POST", "/fapi/v1/order", order_params)
         logger.debug(f"Order response: {data}")
 
+        # Invalidate cache after order creation
+        self.cache.invalidate()
+
         return {
             'id': str(data.get('orderId')),
             'symbol': data.get('symbol'),
@@ -327,6 +556,9 @@ class BinanceClient:
         }
 
         data = await self._request("DELETE", "/fapi/v1/order", params)
+
+        # Invalidate cache after order cancellation
+        self.cache.invalidate()
 
         return {
             'id': str(data.get('orderId')),

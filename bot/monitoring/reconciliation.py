@@ -13,12 +13,14 @@ logger = logging.getLogger(__name__)
 class ReconciliationLoop:
     def __init__(self, config: dict):
         self.config = config
-        self.interval_seconds = config.get("reconciliation", {}).get("interval_seconds", 60)
+        # Default to 180 seconds (3 min) to reduce API load
+        self.interval_seconds = config.get("reconciliation", {}).get("interval_seconds", 180)
         self.auto_add_sl = config.get("reconciliation", {}).get("auto_add_sl", True)
         self.auto_add_tp = config.get("reconciliation", {}).get("auto_add_tp", True)
         self.atr_sl_multiplier = config.get("reconciliation", {}).get("atr_sl_multiplier", 2.0)
         self.atr_tp_multiplier = config.get("reconciliation", {}).get("atr_tp_multiplier", 3.0)
         self._running = False
+        self._consecutive_errors = 0
 
     async def start(self):
         """Starts the reconciliation loop as a background task."""
@@ -28,7 +30,15 @@ class ReconciliationLoop:
         while self._running:
             try:
                 await self.run_reconciliation()
+                self._consecutive_errors = 0
             except Exception as e:
+                self._consecutive_errors += 1
+                # If rate limited, back off exponentially
+                if "Rate limited" in str(e) or "418" in str(e) or "429" in str(e):
+                    wait_time = min(self.interval_seconds * (2 ** self._consecutive_errors), 300)
+                    logger.warning(f"Reconciliation backing off for {wait_time}s due to rate limit")
+                    await asyncio.sleep(wait_time)
+                    continue
                 logger.error(f"Reconciliation error: {e}")
                 await telegram_alerter.alert_error("Reconciliation", str(e))
 

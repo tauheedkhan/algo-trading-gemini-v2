@@ -5,7 +5,7 @@ import os
 import uvicorn
 from dotenv import load_dotenv
 
-from bot.core.logging_config import setup_logging
+from bot.core.logging_config import setup_logging, log_bot_start, log_bot_stop
 from bot.core.config import load_config
 from bot.core.engine import trading_engine
 from bot.api.dashboard_api import app
@@ -17,7 +17,7 @@ from bot.monitoring.position_monitor import create_position_monitor
 from bot.alerts.telegram import telegram_alerter
 
 # Setup logging first (before any other imports that might log)
-setup_logging(log_level="INFO", use_colors=True)
+setup_logging(log_level="INFO", use_colors=True, log_dir="logs")
 
 import logging
 logger = logging.getLogger(__name__)
@@ -111,6 +111,7 @@ async def graceful_shutdown(reason: str = "User requested"):
     await db.close()
 
     logger.info(f"Graceful shutdown complete. Closed {positions_closed} positions.")
+    log_bot_stop(reason)
 
 
 def signal_handler(sig, frame):
@@ -164,6 +165,7 @@ async def main():
 
     # Log startup
     env_type = os.getenv("BINANCE_ENV", "testnet")
+    log_bot_start()
     logger.info(f"Starting Trading Bot in {env_type.upper()} mode")
 
     # Print loaded config to console
