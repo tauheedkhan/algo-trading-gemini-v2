@@ -138,6 +138,11 @@ class BinanceClient:
 
     def round_quantity(self, symbol: str, quantity: float) -> float:
         """Rounds quantity to valid precision for the symbol."""
+        # Convert numpy floats to Python floats
+        if hasattr(quantity, 'item'):
+            quantity = quantity.item()
+        quantity = float(quantity)
+
         symbol_clean = symbol.replace("/", "")
         info = self._symbol_info.get(symbol_clean, {})
         precision = info.get('quantityPrecision', 3)
@@ -150,6 +155,11 @@ class BinanceClient:
 
     def round_price(self, symbol: str, price: float) -> float:
         """Rounds price to valid precision for the symbol."""
+        # Convert numpy floats to Python floats
+        if hasattr(price, 'item'):
+            price = price.item()
+        price = float(price)
+
         symbol_clean = symbol.replace("/", "")
         info = self._symbol_info.get(symbol_clean, {})
         precision = info.get('pricePrecision', 2)
@@ -291,7 +301,9 @@ class BinanceClient:
         if params.get('reduceOnly'):
             order_params['reduceOnly'] = 'true'
 
+        logger.debug(f"Creating order: {order_params}")
         data = await self._request("POST", "/fapi/v1/order", order_params)
+        logger.debug(f"Order response: {data}")
 
         return {
             'id': str(data.get('orderId')),

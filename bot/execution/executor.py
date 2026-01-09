@@ -51,19 +51,37 @@ class Executor:
         strategy = signal.get("reason", "Unknown")
         regime = signal.get("regime", "UNKNOWN")
 
+        # Convert numpy floats to Python floats (fixes JSON serialization issues)
+        if hasattr(entry_price, 'item'):
+            entry_price = entry_price.item()
+        if hasattr(stop_loss, 'item'):
+            stop_loss = stop_loss.item()
+        if hasattr(take_profit, 'item'):
+            take_profit = take_profit.item()
+
         # Validate that stop_loss and take_profit are present
         if stop_loss is None or take_profit is None:
             logger.error(f"[{symbol}] Signal missing SL or TP - stop_loss={stop_loss}, take_profit={take_profit}")
             return None
 
+        # Fetch available margin from exchange
+        try:
+            balance = await self.client.get_balance()
+            available_margin = balance.get('free', {}).get('USDT', 0)
+            logger.info(f"[{symbol}] Available margin: ${available_margin:.2f}")
+        except Exception as e:
+            logger.warning(f"[{symbol}] Could not fetch available margin: {e}")
+            available_margin = None
+
         size = self.risk_engine.calculate_position_size(
             equity,
             entry_price,
-            {"stop_loss": stop_loss}
+            {"stop_loss": stop_loss},
+            available_margin=available_margin
         )
 
         if size <= 0:
-            logger.warning(f"[{symbol}] Calculated position size is 0. Aborting.")
+            logger.warning(f"[{symbol}] Calculated position size is 0 or insufficient margin. Aborting.")
             return None
 
         logger.info(f"EXECUTING [{symbol}] {side} Size: {size:.4f} @ {entry_price} SL: {stop_loss} TP: {take_profit}")
@@ -88,12 +106,14 @@ class Executor:
             # Place SL/TP with retry
             sl_side = 'sell' if side == "BUY" else 'buy'
 
+            logger.info(f"[{symbol}] Placing SL order: side={sl_side}, size={size}, stopPrice={stop_loss}")
             sl_order = await self._execute_with_retry(
                 self.client.create_order,
                 symbol, 'STOP_MARKET', sl_side, size, None,
                 {'stopPrice': stop_loss, 'reduceOnly': True}
             )
 
+            logger.info(f"[{symbol}] Placing TP order: side={sl_side}, size={size}, stopPrice={take_profit}")
             tp_order = await self._execute_with_retry(
                 self.client.create_order,
                 symbol, 'TAKE_PROFIT_MARKET', sl_side, size, None,
@@ -102,10 +122,14 @@ class Executor:
 
             # Verify protective orders were placed (reconciliation loop will auto-add if missing)
             if not sl_order:
-                logger.error(f"[{symbol}] Failed to place SL order - reconciliation will auto-add")
+                logger.error(f"[{symbol}] Failed to place SL order at {stop_loss} - reconciliation will auto-add")
+            else:
+                logger.info(f"[{symbol}] SL order placed successfully: {sl_order.get('id')}")
 
             if not tp_order:
-                logger.warning(f"[{symbol}] Failed to place TP order - reconciliation will auto-add")
+                logger.error(f"[{symbol}] Failed to place TP order at {take_profit} - reconciliation will auto-add")
+            else:
+                logger.info(f"[{symbol}] TP order placed successfully: {tp_order.get('id')}")
 
             # DB Logging
             await db.execute(
@@ -146,6 +170,7 @@ class Executor:
     async def _execute_with_retry(self, func, *args, **kwargs) -> Optional[dict]:
         """Executes a function with exponential backoff retry."""
         last_error = None
+        func_name = getattr(func, '__name__', str(func))
 
         for attempt in range(self.max_retries):
             try:
@@ -153,10 +178,11 @@ class Executor:
             except Exception as e:
                 last_error = e
                 wait_time = self.retry_delay * (2 ** attempt)
-                logger.warning(f"Retry {attempt + 1}/{self.max_retries} after {wait_time}s: {e}")
+                logger.warning(f"Retry {attempt + 1}/{self.max_retries} for {func_name} after {wait_time}s: {e}")
+                logger.warning(f"  Args: {args[:3]}...")  # Log first 3 args for context
                 await asyncio.sleep(wait_time)
 
-        logger.error(f"All {self.max_retries} retries failed: {last_error}")
+        logger.error(f"All {self.max_retries} retries failed for {func_name}: {last_error}")
         return None
 
 

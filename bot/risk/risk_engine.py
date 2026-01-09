@@ -62,14 +62,15 @@ class RiskEngine:
 
         return True
         
-    def calculate_position_size(self, equity: float, entry_price: float, risk_metrics: dict) -> float:
+    def calculate_position_size(self, equity: float, entry_price: float, risk_metrics: dict,
+                                  available_margin: float = None) -> float:
         """
         Calculates position size (in base asset) based on Volatility Targeting.
-        
+
         Formula:
         Risk Amount = Equity * Target Risk %
         Position Size (Units) = Risk Amount / (ATR * Multiplier) OR Risk Amount / Stop Dist
-        
+
         Using Stop Distance from Signal is safer/more direct.
         Size = (Equity * Risk_%) / |Entry - SL|
         """
@@ -77,11 +78,11 @@ class RiskEngine:
         if not stop_loss:
             logger.warning("No Stop Loss provided, cannot calculate size.")
             return 0.0
-            
+
         risk_per_share = abs(entry_price - stop_loss)
         if risk_per_share == 0:
             return 0.0
-            
+
         risk_amount_usd = equity * self.target_risk_pct
 
         position_size = risk_amount_usd / risk_per_share
@@ -97,6 +98,20 @@ class RiskEngine:
             position_size = max_notional / entry_price
             notional = position_size * entry_price
             margin_used = notional / self.leverage
+
+        # Cap 2: Check available margin (actual free balance on exchange)
+        if available_margin is not None:
+            # Leave 10% buffer for fees and slippage
+            usable_margin = available_margin * 0.90
+            if margin_used > usable_margin:
+                if usable_margin <= 0:
+                    logger.warning(f"No available margin (available=${available_margin:.0f}). Cannot open position.")
+                    return 0.0
+                max_notional = usable_margin * self.leverage
+                logger.info(f"Margin ${margin_used:.0f} exceeds available ${usable_margin:.0f}. Capping notional to ${max_notional:.0f}")
+                position_size = max_notional / entry_price
+                notional = position_size * entry_price
+                margin_used = notional / self.leverage
 
         logger.info(f"Position: notional=${notional:.0f}, margin=${margin_used:.0f}, leverage={self.leverage}x")
 

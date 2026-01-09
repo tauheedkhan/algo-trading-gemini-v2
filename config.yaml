@@ -20,7 +20,7 @@ timeframes:
 # Risk Management (Volatility Targeting)
 risk:
   target_risk_per_trade_percent: 0.20  # 20% of equity risked per trade
-  max_position_percent: 0.25           # Max 25% of equity per position
+  max_position_percent: 0.1          # Max 10% of equity per position
   max_open_positions: 10
   max_drawdown_daily_percent: 10.0
   leverage: 10
