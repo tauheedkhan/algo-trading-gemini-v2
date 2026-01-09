@@ -61,17 +61,34 @@ class TelegramAlerter:
         )
         await self.send_message(message)
 
-    async def alert_trade_closed(self, symbol: str, side: str, pnl: float, exit_reason: str):
+    async def alert_trade_closed(self, symbol: str, side: str, pnl: float, exit_reason: str,
+                                  entry_price: float = None, exit_price: float = None, fee: float = None):
         """Alert when a trade is closed."""
         emoji = "💰" if pnl > 0 else "💸"
         pnl_sign = "+" if pnl > 0 else ""
+
+        # Determine exit reason emoji
+        reason_emoji = "✅" if exit_reason == "TP_HIT" else "❌" if exit_reason == "SL_HIT" else "🔄"
+
         message = (
             f"{emoji} <b>Trade Closed</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"Symbol: <code>{symbol}</code>\n"
             f"Side: {side}\n"
-            f"PnL: {pnl_sign}${pnl:,.2f}\n"
-            f"Reason: {exit_reason}"
         )
+
+        if entry_price:
+            message += f"Entry: ${entry_price:,.2f}\n"
+        if exit_price:
+            message += f"Exit: ${exit_price:,.2f}\n"
+
+        message += f"<b>PnL:</b> {pnl_sign}${pnl:,.2f}\n"
+
+        if fee:
+            message += f"Fee: ${fee:,.4f}\n"
+
+        message += f"{reason_emoji} <b>Reason:</b> {exit_reason}"
+
         await self.send_message(message)
 
     async def alert_kill_switch(self, reason: str):
@@ -102,18 +119,54 @@ class TelegramAlerter:
         await self.send_message(message)
 
     async def send_heartbeat(self, status: dict):
-        """Send hourly heartbeat."""
+        """Send hourly heartbeat with performance stats."""
         daily_pnl = status.get('daily_pnl', 0)
         pnl_emoji = "📈" if daily_pnl >= 0 else "📉"
         pnl_sign = "+" if daily_pnl > 0 else ""
 
+        # Get performance stats
+        stats = status.get('stats', {})
+        today = status.get('today', {})
+
         message = (
             f"💓 <b>Heartbeat</b>\n"
-            f"Status: {status.get('status', 'OK')}\n"
-            f"Equity: ${status.get('equity', 0):,.2f}\n"
-            f"Open Positions: {status.get('open_positions', 0)}\n"
-            f"{pnl_emoji} Daily PnL: {pnl_sign}${daily_pnl:,.2f}"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"<b>Status:</b> {status.get('status', 'OK')}\n"
+            f"<b>Equity:</b> ${status.get('equity', 0):,.2f}\n"
+            f"<b>Open Positions:</b> {status.get('open_positions', 0)}\n"
+            f"{pnl_emoji} <b>Daily PnL:</b> {pnl_sign}${daily_pnl:,.2f}\n"
         )
+
+        # Add performance stats if available
+        if stats:
+            net_pnl = stats.get('net_pnl', 0)
+            net_pnl_sign = "+" if net_pnl > 0 else ""
+            net_pnl_emoji = "💰" if net_pnl >= 0 else "💸"
+
+            message += (
+                f"\n<b>📊 Performance Stats</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Trades: {stats.get('total_trades_opened', 0)} opened, {stats.get('total_trades_closed', 0)} closed\n"
+                f"✅ TP Hits: {stats.get('tp_hits', 0)} | ❌ SL Hits: {stats.get('sl_hits', 0)}\n"
+                f"Win Rate: {stats.get('win_rate', 0)}%\n"
+                f"Total PnL: {'+' if stats.get('total_pnl', 0) >= 0 else ''}${stats.get('total_pnl', 0):,.2f}\n"
+                f"Total Fees: ${stats.get('total_fees', 0):,.2f}\n"
+                f"{net_pnl_emoji} <b>Net PnL:</b> {net_pnl_sign}${net_pnl:,.2f}\n"
+            )
+
+        # Add today's stats if available
+        if today:
+            today_pnl = today.get('pnl', 0)
+            today_sign = "+" if today_pnl > 0 else ""
+
+            message += (
+                f"\n<b>📅 Today</b>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"Opened: {today.get('trades_opened', 0)} | Closed: {today.get('trades_closed', 0)}\n"
+                f"TP: {today.get('tp_hits', 0)} | SL: {today.get('sl_hits', 0)}\n"
+                f"PnL: {today_sign}${today_pnl:,.2f} | Fees: ${today.get('fees', 0):,.2f}"
+            )
+
         await self.send_message(message)
 
     async def alert_startup(self, config_summary: dict):

@@ -13,6 +13,7 @@ from bot.exchange.binance_client import binance_client
 from bot.state.db import db
 from bot.monitoring.reconciliation import create_reconciliation_loop
 from bot.monitoring.health import create_health_monitor
+from bot.monitoring.position_monitor import create_position_monitor
 from bot.alerts.telegram import telegram_alerter
 
 # Setup logging first (before any other imports that might log)
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 shutdown_event = asyncio.Event()
 reconciliation_loop = None
 health_monitor = None
+position_monitor = None
 
 
 async def start_api():
@@ -50,6 +52,8 @@ async def graceful_shutdown(reason: str = "User requested"):
         reconciliation_loop.stop()
     if health_monitor:
         health_monitor.stop()
+    if position_monitor:
+        position_monitor.stop()
 
     positions_closed = 0
     config = load_config("config.yaml")
@@ -153,7 +157,7 @@ def print_config(config: dict, env_type: str):
 
 
 async def main():
-    global reconciliation_loop, health_monitor
+    global reconciliation_loop, health_monitor, position_monitor
 
     load_dotenv()
     config = load_config("config.yaml")
@@ -175,6 +179,7 @@ async def main():
     # Create monitoring components
     reconciliation_loop = create_reconciliation_loop(config)
     health_monitor = create_health_monitor(config)
+    position_monitor = create_position_monitor(config)
 
     # Verify exchange configuration (non-critical on testnet)
     try:
@@ -199,6 +204,7 @@ async def main():
         asyncio.create_task(start_api(), name="api"),
         asyncio.create_task(reconciliation_loop.start(), name="reconciliation"),
         asyncio.create_task(health_monitor.start(), name="health"),
+        asyncio.create_task(position_monitor.start(), name="position_monitor"),
     ]
 
     # Wait for shutdown signal

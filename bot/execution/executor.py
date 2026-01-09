@@ -131,12 +131,12 @@ class Executor:
             else:
                 logger.info(f"[{symbol}] TP order placed successfully: {tp_order.get('id')}")
 
-            # DB Logging
+            # DB Logging - include SL/TP prices for tracking
             await db.execute(
                 """INSERT INTO trades
-                   (symbol, strategy, side, entry_price, size, regime_at_entry, entry_time)
-                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
-                (symbol, strategy, side, filled_price, size, regime)
+                   (symbol, strategy, side, entry_price, size, regime_at_entry, entry_time, sl_price, tp_price)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'), ?, ?)""",
+                (symbol, strategy, side, filled_price, size, regime, stop_loss, take_profit)
             )
 
             # Send Telegram alert

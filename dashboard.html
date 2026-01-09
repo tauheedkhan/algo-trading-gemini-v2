@@ -15,7 +15,7 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 0 auto;
         }
 
@@ -32,11 +32,33 @@
             margin-bottom: 40px;
         }
 
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 40px;
+        }
+
         .card {
             background: #1e293b;
             padding: 20px;
             border-radius: 8px;
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-card {
+            background: #1e293b;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            margin: 0 0 8px 0;
+            color: #94a3b8;
+            font-size: 0.75em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .card h3 {
@@ -51,12 +73,25 @@
             font-weight: bold;
         }
 
-        .stat.green {
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        .stat.green, .stat-value.green {
             color: #4ade80;
         }
 
-        .stat.red {
+        .stat.red, .stat-value.red {
             color: #f87171;
+        }
+
+        .stat.blue, .stat-value.blue {
+            color: #60a5fa;
+        }
+
+        .stat.yellow, .stat-value.yellow {
+            color: #fbbf24;
         }
 
         table {
@@ -93,9 +128,19 @@
             color: #34d399;
         }
 
+        .bg-red {
+            background: #7f1d1d;
+            color: #f87171;
+        }
+
         .bg-blue {
             background: #1e40af;
             color: #60a5fa;
+        }
+
+        .bg-yellow {
+            background: #78350f;
+            color: #fbbf24;
         }
 
         .bg-gray {
@@ -112,18 +157,113 @@
             color: white;
             border-radius: 4px;
         }
+
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .last-updated {
+            font-size: 0.8em;
+            color: #64748b;
+        }
+
+        .pnl-positive { color: #4ade80; }
+        .pnl-negative { color: #f87171; }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <h1>🚀 Algo Bot Dashboard</h1>
+        <h1>Algo Bot Dashboard</h1>
         <input type="password" id="api-token" placeholder="Enter DASHBOARD_TOKEN from .env" onchange="saveToken()">
+
+        <!-- Performance Stats -->
+        <div class="section-header">
+            <h2>Performance Stats</h2>
+            <span class="last-updated" id="stats-updated"></span>
+        </div>
+
+        <div class="stats-grid" id="stats-grid">
+            <div class="stat-card">
+                <h3>Total Opened</h3>
+                <div class="stat-value" id="stat-total-opened">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Closed</h3>
+                <div class="stat-value" id="stat-total-closed">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Open Trades</h3>
+                <div class="stat-value blue" id="stat-open-trades">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>TP Hits</h3>
+                <div class="stat-value green" id="stat-tp-hits">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>SL Hits</h3>
+                <div class="stat-value red" id="stat-sl-hits">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Win Rate</h3>
+                <div class="stat-value" id="stat-win-rate">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total PnL</h3>
+                <div class="stat-value" id="stat-total-pnl">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Fees</h3>
+                <div class="stat-value yellow" id="stat-total-fees">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Net PnL</h3>
+                <div class="stat-value" id="stat-net-pnl">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Avg Win</h3>
+                <div class="stat-value green" id="stat-avg-win">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Avg Loss</h3>
+                <div class="stat-value red" id="stat-avg-loss">-</div>
+            </div>
+        </div>
+
+        <!-- Today's Stats -->
+        <h2>Today's Performance</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Opened Today</h3>
+                <div class="stat-value" id="stat-today-opened">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Closed Today</h3>
+                <div class="stat-value" id="stat-today-closed">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Today's PnL</h3>
+                <div class="stat-value" id="stat-today-pnl">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>Today's Fees</h3>
+                <div class="stat-value yellow" id="stat-today-fees">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>TP Today</h3>
+                <div class="stat-value green" id="stat-today-tp">-</div>
+            </div>
+            <div class="stat-card">
+                <h3>SL Today</h3>
+                <div class="stat-value red" id="stat-today-sl">-</div>
+            </div>
+        </div>
 
         <!-- Regimes -->
         <h2>Market Regimes</h2>
         <div class="grid" id="regimes-grid">
-            <!-- Populated by JS -->
             <div class="card">Loading...</div>
         </div>
 
@@ -136,19 +276,22 @@
                         <th>Symbol</th>
                         <th>Side</th>
                         <th>Size</th>
+                        <th>Entry</th>
+                        <th>Mark</th>
                         <th>PnL (u)</th>
+                        <th>Leverage</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td colspan="4">Loading...</td>
+                        <td colspan="7">Loading...</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
         <!-- Recent Trades -->
-        <h2>Recent Trades</h2>
+        <h2>Trade History</h2>
         <div class="card">
             <table id="trades-table">
                 <thead>
@@ -156,14 +299,17 @@
                         <th>Time</th>
                         <th>Symbol</th>
                         <th>Side</th>
-                        <th>Price</th>
+                        <th>Entry</th>
+                        <th>Exit</th>
                         <th>Size</th>
-                        <th>Result</th>
+                        <th>PnL</th>
+                        <th>Fee</th>
+                        <th>Exit Reason</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td colspan="6">Loading...</td>
+                        <td colspan="9">Loading...</td>
                     </tr>
                 </tbody>
             </table>
@@ -171,7 +317,8 @@
     </div>
 
     <script>
-        const API_URL = "http://localhost:8000";
+        // Use relative URL when served from the same server, or localhost for static file access
+        const API_URL = window.location.protocol === 'file:' ? 'http://localhost:8000' : '';
 
         function getToken() {
             return localStorage.getItem("dashboard_token") || "";
@@ -185,30 +332,98 @@
 
         async function fetchWithAuth(endpoint) {
             const token = getToken();
-            const res = await fetch(`${API_URL}${endpoint}`, {
-                headers: { "X-API-Token": token }
-            });
-            if (res.status === 401) {
-                alert("Invalid Token! Check .env");
+            try {
+                const res = await fetch(`${API_URL}${endpoint}`, {
+                    headers: { "X-API-Token": token }
+                });
+                if (res.status === 401) {
+                    console.error("Invalid Token!");
+                    return null;
+                }
+                return res.json();
+            } catch (e) {
+                console.error("Fetch error:", e);
                 return null;
             }
-            return res.json();
+        }
+
+        function formatPnl(pnl) {
+            if (pnl === null || pnl === undefined) return '-';
+            const sign = pnl >= 0 ? '+' : '';
+            const cls = pnl >= 0 ? 'pnl-positive' : 'pnl-negative';
+            return `<span class="${cls}">${sign}$${pnl.toFixed(2)}</span>`;
+        }
+
+        function formatMoney(val) {
+            if (val === null || val === undefined) return '-';
+            return `$${val.toFixed(2)}`;
+        }
+
+        async function fetchStats() {
+            const data = await fetchWithAuth("/api/stats");
+            if (!data) return;
+
+            const overall = data.overall;
+            const today = data.today;
+
+            // Overall stats
+            document.getElementById('stat-total-opened').textContent = overall.total_trades_opened;
+            document.getElementById('stat-total-closed').textContent = overall.total_trades_closed;
+            document.getElementById('stat-open-trades').textContent = overall.open_trades;
+            document.getElementById('stat-tp-hits').textContent = overall.tp_hits;
+            document.getElementById('stat-sl-hits').textContent = overall.sl_hits;
+            document.getElementById('stat-win-rate').textContent = `${overall.win_rate}%`;
+            document.getElementById('stat-win-rate').className = `stat-value ${overall.win_rate >= 50 ? 'green' : 'red'}`;
+
+            const totalPnlEl = document.getElementById('stat-total-pnl');
+            totalPnlEl.textContent = `${overall.total_pnl >= 0 ? '+' : ''}$${overall.total_pnl.toFixed(2)}`;
+            totalPnlEl.className = `stat-value ${overall.total_pnl >= 0 ? 'green' : 'red'}`;
+
+            document.getElementById('stat-total-fees').textContent = `$${overall.total_fees.toFixed(2)}`;
+
+            const netPnlEl = document.getElementById('stat-net-pnl');
+            netPnlEl.textContent = `${overall.net_pnl >= 0 ? '+' : ''}$${overall.net_pnl.toFixed(2)}`;
+            netPnlEl.className = `stat-value ${overall.net_pnl >= 0 ? 'green' : 'red'}`;
+
+            document.getElementById('stat-avg-win').textContent = `+$${overall.avg_win.toFixed(2)}`;
+            document.getElementById('stat-avg-loss').textContent = `$${overall.avg_loss.toFixed(2)}`;
+
+            // Today stats
+            document.getElementById('stat-today-opened').textContent = today.trades_opened;
+            document.getElementById('stat-today-closed').textContent = today.trades_closed;
+
+            const todayPnlEl = document.getElementById('stat-today-pnl');
+            todayPnlEl.textContent = `${today.pnl >= 0 ? '+' : ''}$${today.pnl.toFixed(2)}`;
+            todayPnlEl.className = `stat-value ${today.pnl >= 0 ? 'green' : 'red'}`;
+
+            document.getElementById('stat-today-fees').textContent = `$${today.fees.toFixed(2)}`;
+            document.getElementById('stat-today-tp').textContent = today.tp_hits;
+            document.getElementById('stat-today-sl').textContent = today.sl_hits;
+
+            document.getElementById('stats-updated').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
         }
 
         async function fetchData() {
             if (!getToken()) return;
 
+            // Fetch stats
+            await fetchStats();
+
             // Regimes
             const regimesData = await fetchWithAuth("/api/regimes");
             if (regimesData) {
                 const grid = document.getElementById("regimes-grid");
-                grid.innerHTML = regimesData.regimes.map(r => `
-                    <div class="card">
-                        <h3>${r.symbol}</h3>
-                        <div class="stat ${r.regime.includes('TREND') ? 'green' : 'blue'}">${r.regime}</div>
-                        <div style="margin-top:10px; font-size:0.9em; color:#94a3b8">Confidence: ${(r.confidence * 100).toFixed(0)}%</div>
-                    </div>
-                `).join("");
+                if (regimesData.regimes.length === 0) {
+                    grid.innerHTML = '<div class="card">No regime data</div>';
+                } else {
+                    grid.innerHTML = regimesData.regimes.map(r => `
+                        <div class="card">
+                            <h3>${r.symbol}</h3>
+                            <div class="stat ${r.regime.includes('TREND') ? 'green' : r.regime.includes('RANGE') ? 'blue' : ''}">${r.regime}</div>
+                            <div style="margin-top:10px; font-size:0.9em; color:#94a3b8">Confidence: ${(r.confidence * 100).toFixed(0)}%</div>
+                        </div>
+                    `).join("");
+                }
             }
 
             // Positions
@@ -216,33 +431,48 @@
             if (posData) {
                 const tbody = document.querySelector("#positions-table tbody");
                 if (posData.positions.length === 0) {
-                    tbody.innerHTML = "<tr><td colspan='4'>No open positions</td></tr>";
+                    tbody.innerHTML = "<tr><td colspan='7'>No open positions</td></tr>";
                 } else {
                     tbody.innerHTML = posData.positions.map(p => `
                         <tr>
                             <td>${p.symbol}</td>
-                            <td><span class="badge ${p.side === 'BUY' ? 'bg-green' : 'bg-red'}">${p.side}</span></td>
-                            <td>${p.size}</td>
-                            <td class="${p.unrealized_pnl >= 0 ? 'green' : 'red'}">${p.unrealized_pnl}</td>
+                            <td><span class="badge ${p.side === 'LONG' ? 'bg-green' : 'bg-red'}">${p.side}</span></td>
+                            <td>${p.size ? p.size.toFixed(4) : '-'}</td>
+                            <td>${p.entry_price ? '$' + p.entry_price.toFixed(2) : '-'}</td>
+                            <td>${p.mark_price ? '$' + p.mark_price.toFixed(2) : '-'}</td>
+                            <td class="${p.unrealized_pnl >= 0 ? 'pnl-positive' : 'pnl-negative'}">${p.unrealized_pnl ? (p.unrealized_pnl >= 0 ? '+' : '') + '$' + p.unrealized_pnl.toFixed(2) : '-'}</td>
+                            <td>${p.leverage ? p.leverage + 'x' : '-'}</td>
                         </tr>
                     `).join("");
                 }
             }
 
-            // Trades
-            const tradesData = await fetchWithAuth("/api/trades");
+            // Trade History
+            const tradesData = await fetchWithAuth("/api/trade-history");
             if (tradesData) {
                 const tbody = document.querySelector("#trades-table tbody");
-                tbody.innerHTML = tradesData.trades.map(t => `
-                    <tr>
-                        <td>${new Date(t.entry_time).toLocaleString()}</td>
-                        <td>${t.symbol}</td>
-                        <td>${t.side}</td>
-                        <td>${t.entry_price}</td>
-                        <td>${t.size}</td>
-                        <td>${t.pnl ? t.pnl : '-'}</td>
-                    </tr>
-                `).join("");
+                if (tradesData.trades.length === 0) {
+                    tbody.innerHTML = "<tr><td colspan='9'>No trades yet</td></tr>";
+                } else {
+                    tbody.innerHTML = tradesData.trades.map(t => {
+                        const exitReasonClass = t.exit_reason === 'TP_HIT' ? 'bg-green' :
+                                               t.exit_reason === 'SL_HIT' ? 'bg-red' :
+                                               t.exit_reason ? 'bg-yellow' : 'bg-gray';
+                        return `
+                            <tr>
+                                <td>${t.entry_time ? new Date(t.entry_time).toLocaleString() : '-'}</td>
+                                <td>${t.symbol}</td>
+                                <td><span class="badge ${t.side === 'BUY' ? 'bg-green' : 'bg-red'}">${t.side}</span></td>
+                                <td>${t.entry_price ? '$' + t.entry_price.toFixed(2) : '-'}</td>
+                                <td>${t.exit_price ? '$' + t.exit_price.toFixed(2) : '-'}</td>
+                                <td>${t.size ? t.size.toFixed(4) : '-'}</td>
+                                <td>${formatPnl(t.pnl)}</td>
+                                <td>${t.fee ? '$' + t.fee.toFixed(4) : '-'}</td>
+                                <td><span class="badge ${exitReasonClass}">${t.exit_reason || 'OPEN'}</span></td>
+                            </tr>
+                        `;
+                    }).join("");
+                }
             }
         }
 

@@ -44,7 +44,7 @@ class HealthMonitor:
         logger.info("Health monitor stopped")
 
     async def send_heartbeat(self):
-        """Sends a heartbeat with current system status."""
+        """Sends a heartbeat with current system status and performance stats."""
         # Gather status information
         balance = await binance_client.get_balance()
         equity = float(balance['total']['USDT'])
@@ -56,18 +56,24 @@ class HealthMonitor:
         start_equity = await db.get_daily_start_equity()
         daily_pnl = equity - start_equity if start_equity else 0
 
+        # Get performance stats
+        stats = await db.get_performance_stats()
+        today = await db.get_daily_stats()
+
         status = {
             "status": "OK",
             "equity": equity,
             "open_positions": open_positions,
             "daily_pnl": daily_pnl,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
+            "stats": stats,
+            "today": today
         }
 
         await telegram_alerter.send_heartbeat(status)
         self._last_heartbeat = datetime.utcnow()
 
-        logger.info(f"Heartbeat sent: Equity=${equity:.2f}, Positions={open_positions}, DailyPnL=${daily_pnl:.2f}")
+        logger.info(f"Heartbeat sent: Equity=${equity:.2f}, Positions={open_positions}, DailyPnL=${daily_pnl:.2f}, NetPnL=${stats.get('net_pnl', 0):.2f}")
 
     async def verify_exchange_config(self) -> dict:
         """Verifies position mode and margin mode match config requirements."""
