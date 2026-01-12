@@ -11,3 +11,4 @@ httpx
 pydantic
 sqlalchemy
 aiosqlite
+websockets

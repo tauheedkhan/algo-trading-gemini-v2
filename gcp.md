@@ -40,10 +40,9 @@ Here's how to run the bot as a systemd service on a GCP VM:
 
   [Service]
   Type=simple
-  User=YOUR_USERNAME
-  WorkingDirectory=/home/YOUR_USERNAME/algo-trading-gemini
-  EnvironmentFile=/etc/algo-trading.env
-  ExecStart=/home/YOUR_USERNAME/algo-trading-gemini/venv/bin/python main.py
+  User=shaindakhan8273
+  WorkingDirectory=/home/shaindakhan8273/algo-trading-gemini
+  ExecStart=/home/shaindakhan8273/algo-trading-gemini/venv/bin/python main.py
   Restart=always
   RestartSec=10
 

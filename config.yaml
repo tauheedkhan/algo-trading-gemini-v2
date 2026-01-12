@@ -29,6 +29,8 @@ risk:
 regime:
   trend_adx_threshold: 25
   range_adx_threshold: 20
+  trade_only_when_confirmed: false
+  min_duration_bars: 1
   volatility_percentile_window: 1000
 strategies:
   trend_pullback:
@@ -45,8 +47,8 @@ strategies:
     enabled: true
     bb_length: 20
     bb_std: 2.0
-    rsi_oversold: 30
-    rsi_overbought: 70
+    rsi_oversold: 40
+    rsi_overbought: 60
     divergence_lookback: 5
     max_sl_percent: 0.03
     only_if_regime: RANGE
