@@ -1,38 +1,35 @@
-# Symbol Configuration
 symbols:
-  - BTC/USDT
-  - ETH/USDT
-  - SOL/USDT
-  - XRP/USDT
-  - DOGE/USDT
-  - AVAX/USDT
-  - LINK/USDT
-  - ADA/USDT
-  - MATIC/USDT
-  - DOT/USDT
-
-# Timeframes
+- BTC/USDT
+- ETH/USDT
+- SOL/USDT
+- LINK/USDT
+- BNB/USDT
+- XRP/USDT
+- DOGE/USDT
+- AVAX/USDT
+- MATIC/USDT
+- DOT/USDT
 timeframes:
   trend: 1d
   setup: 4h
   entry: 1h
-
-# Risk Management (Volatility Targeting)
 risk:
-  target_risk_per_trade_percent: 0.20  # 20% of equity risked per trade
-  max_position_percent: 0.1          # Max 10% of equity per position
-  max_open_positions: 10
-  max_drawdown_daily_percent: 10.0
-  leverage: 10
-  margin_mode: "ISOLATED"
-
-# Regime Settings (Percentiles provided as examples, code will compute dynamic)
+  target_risk_per_trade_percent: 0.005
+  max_position_percent: 0.03
+  max_open_positions: 3
+  max_drawdown_daily_percent: 3.0
+  leverage: 3
+  margin_mode: ISOLATED
+  use_confidence_sizing: true
+  min_risk_percent: 0.0025
+  max_risk_percent: 0.0075
+  min_confidence_threshold: 0.2
+  confidence_curve: squared
+  max_stop_atr_mult: 1.8
 regime:
   trend_adx_threshold: 25
   range_adx_threshold: 20
-  volatility_percentile_window: 1000  # Lookback for calculating dynamic percentiles
-
-# Strategy Settings
+  volatility_percentile_window: 1000
 strategies:
   trend_pullback:
     enabled: true
@@ -40,8 +37,10 @@ strategies:
     ema_slow: 50
     rsi_min: 40
     rsi_max: 60
-    max_sl_percent: 0.05         # Max 5% SL distance - reject signals with larger SL
-
+    max_sl_percent: 0.03
+    atr_mult: 1.5
+    min_sl_pct: 0.012
+    rr_ratio: 2.0
   range_mean_reversion:
     enabled: true
     bb_length: 20
@@ -49,26 +48,25 @@ strategies:
     rsi_oversold: 30
     rsi_overbought: 70
     divergence_lookback: 5
-    max_sl_percent: 0.05         # Max 5% SL distance - reject signals with larger SL
-
-# Reconciliation Settings
+    max_sl_percent: 0.03
+    only_if_regime: RANGE
+    atr_mult: 1.2
+    min_sl_pct: 0.012
+    min_rr: 1.3
+    range_min_crosses: 3
+    range_cross_lookback: 20
+    range_mid_slope_max: 0.0025
 reconciliation:
-  interval_seconds: 180      # Check every 3 minutes to reduce API load
-  auto_add_sl: true          # Analyze market and add SL if missing
-  auto_add_tp: true          # Analyze market and add TP if missing
-  atr_sl_multiplier: 2.0     # ATR multiplier for calculating SL distance
-  atr_tp_multiplier: 3.0     # ATR multiplier for calculating TP distance
-
-# Monitoring Settings
+  interval_seconds: 180
+  auto_add_sl: true
+  auto_add_tp: true
+  atr_sl_multiplier: 2.0
+  atr_tp_multiplier: 3.0
 monitoring:
-  heartbeat_interval_seconds: 3600  # Send heartbeat every hour
-  position_check_interval: 120      # Check positions every 2 minutes to reduce API load
-
-# Logging Settings
+  heartbeat_interval_seconds: 3600
+  position_check_interval: 120
 logging:
-  level: INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
-
-# Graceful Shutdown Settings
+  level: INFO
 graceful_shutdown:
-  close_positions: true      # Close all positions on shutdown
-  cancel_orders: true        # Cancel all pending orders on shutdown
+  close_positions: false
+  cancel_orders: true

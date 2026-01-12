@@ -50,6 +50,25 @@ class Executor:
         entry_price = signal.get("entry_price")
         stop_loss = signal.get("stop_loss")
         take_profit = signal.get("take_profit")
+
+        # Hard safety: never place a position without both SL and TP
+        if entry_price is None or stop_loss is None or take_profit is None:
+            logger.warning(f"[{symbol}] Missing entry/SL/TP in signal. Aborting execution.")
+            return None
+
+        # Validate SL/TP are on correct sides of entry
+        side_clean = str(side).upper()
+        if side_clean in ("BUY", "LONG"):
+            if not (stop_loss < entry_price < take_profit):
+                logger.warning(f"[{symbol}] Invalid BUY levels: SL={stop_loss}, entry={entry_price}, TP={take_profit}")
+                return None
+        elif side_clean in ("SELL", "SHORT"):
+            if not (take_profit < entry_price < stop_loss):
+                logger.warning(f"[{symbol}] Invalid SELL levels: SL={stop_loss}, entry={entry_price}, TP={take_profit}")
+                return None
+
+        confidence = signal.get('confidence')
+        atr = signal.get('atr')
         strategy = signal.get("reason", "Unknown")
         regime = signal.get("regime", "UNKNOWN")
 
@@ -78,7 +97,7 @@ class Executor:
         size = self.risk_engine.calculate_position_size(
             equity,
             entry_price,
-            {"stop_loss": stop_loss},
+            {"stop_loss": stop_loss, "confidence": confidence, "atr": atr},
             available_margin=available_margin
         )
 

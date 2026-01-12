@@ -23,7 +23,7 @@ class TrendPullbackStrategy:
         self.sr_lookback = self.config.get("sr_lookback", 20)  # Candles to look back for S/R
         self.sr_zone_pct = self.config.get("sr_zone_pct", 0.005)  # 0.5% zone around S/R levels
 
-    def generate_signal(self, df: pd.DataFrame, regime: str) -> dict:
+    def generate_signal(self, df: pd.DataFrame, regime_data) -> dict:
         """
         Generates a trading signal based on Trend Pullback logic.
         Requires:
@@ -32,6 +32,14 @@ class TrendPullbackStrategy:
         3. RSI in valid range (not overbought/oversold)
         """
         signal = {"side": "NONE", "reason": "No Signal"}
+
+        # Backward compatible: accept either regime string or regime_data dict
+        if isinstance(regime_data, dict):
+            regime = regime_data.get('regime', 'NO_TRADE')
+            confidence = float(regime_data.get('confidence', 0.0))
+        else:
+            regime = str(regime_data)
+            confidence = 0.0
 
         if df.empty or len(df) < 3 or "TREND" not in regime:
             return signal
@@ -86,7 +94,10 @@ class TrendPullbackStrategy:
                     "entry_price": close,
                     "stop_loss": stop_loss,
                     "take_profit": take_profit,
-                    "reason": "Trend Pullback Long: EMA20 bounce confirmed"
+                    "reason": "Trend Pullback Long: EMA20 bounce confirmed",
+                    "regime": regime,
+                    "confidence": confidence,
+                    "atr": atr
                 }
                 logger.info(f"Long signal: SL=${stop_loss:.4f} (ATR={atr:.4f}, buffer={buffer:.4f}), TP=${take_profit:.4f}, RR=1:{self.rr_ratio}")
 
@@ -125,7 +136,10 @@ class TrendPullbackStrategy:
                     "entry_price": close,
                     "stop_loss": stop_loss,
                     "take_profit": take_profit,
-                    "reason": "Trend Pullback Short: EMA20 rejection confirmed"
+                    "reason": "Trend Pullback Short: EMA20 rejection confirmed",
+                    "regime": regime,
+                    "confidence": confidence,
+                    "atr": atr
                 }
                 logger.info(f"Short signal: SL=${stop_loss:.4f} (ATR={atr:.4f}, buffer={buffer:.4f}), TP=${take_profit:.4f}, RR=1:{self.rr_ratio}")
 

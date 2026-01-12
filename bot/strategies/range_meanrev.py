@@ -28,8 +28,18 @@ class RangeMeanReversionStrategy:
         # For prototype: Skip full divergence, use Price Extremes + RSI mean reversion
         return True
 
-    def generate_signal(self, df: pd.DataFrame, regime: str) -> dict:
+    def generate_signal(self, df: pd.DataFrame, regime_data) -> dict:
         signal = {"side": "NONE", "reason": "No Signal"}
+
+        # Backward compatible: accept either regime string or regime_data dict
+        if isinstance(regime_data, dict):
+            regime = regime_data.get('regime', 'NO_TRADE')
+            confidence = float(regime_data.get('confidence', 0.0))
+            features = regime_data.get('features', {}) or {}
+        else:
+            regime = str(regime_data)
+            confidence = 0.0
+            features = {}
 
         if df.empty or "RANGE" not in regime:
             return signal
@@ -43,9 +53,28 @@ class RangeMeanReversionStrategy:
         rsi = current['RSI_14']
         atr = current.get('ATR_14', close * 0.02)  # Fallback to 2% if ATR not available
 
+        # Range validity filter: avoid mean reversion during trend transitions
+        try:
+            lookback = int(self.config.get('range_cross_lookback', 20))
+            min_crosses = int(self.config.get('range_min_crosses', 3))
+            mid_slope_max = float(self.config.get('range_mid_slope_max', 0.0025))
+            recent = df.tail(lookback)
+            mid = recent['BBM_20_2.0']
+            # Count crossings of close around mid band
+            sign = (recent['close'] - mid).apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))
+            crosses = int((sign.diff().fillna(0).abs() > 1).sum())
+            # Mid-band slope proxy (normalized)
+            mid_slope = abs(float(mid.iloc[-1] - mid.iloc[0])) / max(1e-9, float(recent['close'].iloc[-1]))
+            if crosses < min_crosses or mid_slope > mid_slope_max:
+                return {"side": "NONE", "reason": f"Range invalid (crosses={crosses}, mid_slope={mid_slope:.4f})"}
+        except Exception:
+            # If indicators missing, fail safe: do not trade mean reversion
+            return {"side": "NONE", "reason": "Range invalid (missing indicators)"}
+
+
         # Long: Price touched Lower Band + RSI Oversold (< 40) + Closing back up
         if current['low'] < lower_band and close > lower_band:
-            if rsi < 40:
+            if rsi < self.config.get('rsi_oversold', 30):
                 # ATR-based SL calculation
                 structure_sl = current['low']
                 buffer = self.atr_mult * atr
@@ -79,13 +108,16 @@ class RangeMeanReversionStrategy:
                     "entry_price": close,
                     "stop_loss": stop_loss,
                     "take_profit": take_profit,
-                    "reason": "Range Long: BB Rejection + RSI"
+                    "reason": "Range Long: BB Rejection + RSI",
+                    "regime": regime,
+                    "confidence": confidence,
+                    "atr": atr
                 }
                 logger.info(f"Long signal: SL=${stop_loss:.4f} (ATR={atr:.4f}), TP=${take_profit:.4f} (mid-band), RR=1:{potential_rr:.1f}")
 
         # Short: Price touched Upper Band + RSI Overbought
         elif current['high'] > upper_band and close < upper_band:
-            if rsi > 60:
+            if rsi > self.config.get('rsi_overbought', 70):
                 # ATR-based SL calculation
                 structure_sl = current['high']
                 buffer = self.atr_mult * atr
@@ -119,7 +151,10 @@ class RangeMeanReversionStrategy:
                     "entry_price": close,
                     "stop_loss": stop_loss,
                     "take_profit": take_profit,
-                    "reason": "Range Short: BB Rejection + RSI"
+                    "reason": "Range Short: BB Rejection + RSI",
+                    "regime": regime,
+                    "confidence": confidence,
+                    "atr": atr
                 }
                 logger.info(f"Short signal: SL=${stop_loss:.4f} (ATR={atr:.4f}), TP=${take_profit:.4f} (mid-band), RR=1:{potential_rr:.1f}")
 

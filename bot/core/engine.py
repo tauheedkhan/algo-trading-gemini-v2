@@ -5,7 +5,7 @@ from bot.exchange.binance_client import binance_client
 from bot.exchange.websocket_client import ws_client
 from bot.data.market_data import market_data
 from bot.data.indicators import indicators
-from bot.regime.regime_classifier import regime_classifier
+from bot.regime.regime_classifier import regime_classifier, create_regime_classifier
 from bot.strategies.router import StrategyRouter
 from bot.execution.executor import executor
 from bot.state.db import db
@@ -14,18 +14,36 @@ logger = logging.getLogger(__name__)
 
 class TradingEngine:
     def __init__(self):
+        global regime_classifier
+
         self.config = load_config("config.yaml")
         self.symbols = self.config.get("symbols", [])
         self.router = StrategyRouter(self.config)
         self._ws_initialized = False
 
+        # Initialize regime classifier with config
+        regime_classifier = create_regime_classifier(self.config)
+        self.regime_classifier = regime_classifier
+
         # Update risk engine and executor with full config
         risk_config = self.config.get('risk', {})
+
+        # Core risk settings
         executor.risk_engine.target_risk_pct = risk_config.get('target_risk_per_trade_percent', 0.02)
         executor.risk_engine.max_positions = risk_config.get('max_open_positions', 3)
         executor.risk_engine.leverage = risk_config.get('leverage', 2)
         executor.risk_engine.max_drawdown_daily_pct = risk_config.get('max_drawdown_daily_percent', 5.0) / 100
         executor.risk_engine.max_position_pct = risk_config.get('max_position_percent', 0.25)
+
+        # Confidence-based sizing settings
+        executor.risk_engine.use_conf_sizing = risk_config.get('use_confidence_sizing', False)
+        executor.risk_engine.min_risk_pct = risk_config.get('min_risk_percent', 0.0025)
+        executor.risk_engine.max_risk_pct = risk_config.get('max_risk_percent', 0.0075)
+        executor.risk_engine.min_conf = risk_config.get('min_confidence_threshold', 0.20)
+        executor.risk_engine.conf_curve = str(risk_config.get('confidence_curve', 'squared')).lower()
+
+        # ATR-based stop validation
+        executor.risk_engine.max_stop_atr_mult = risk_config.get('max_stop_atr_mult', 1.8)
 
         # Set margin mode from config (ISOLATED or CROSSED)
         executor.margin_mode = risk_config.get('margin_mode', 'ISOLATED').upper()
@@ -33,7 +51,8 @@ class TradingEngine:
         logger.info(f"Risk config: {risk_config.get('target_risk_per_trade_percent')*100}% risk, "
                     f"{risk_config.get('leverage')}x leverage, "
                     f"{risk_config.get('max_position_percent', 0.25)*100:.0f}% max position, "
-                    f"{executor.margin_mode} margin")
+                    f"{executor.margin_mode} margin, "
+                    f"confidence_sizing={'ON' if executor.risk_engine.use_conf_sizing else 'OFF'}")
 
     async def _initialize_websocket(self):
         """Initialize WebSocket and preload historical data."""
@@ -151,7 +170,7 @@ class TradingEngine:
         df = indicators.add_all(df)
 
         # C. Detect Regime
-        regime_info = regime_classifier.detect_regime(df, symbol)
+        regime_info = self.regime_classifier.detect_regime(df, symbol)
 
         # Save Regime to DB
         await db.execute(

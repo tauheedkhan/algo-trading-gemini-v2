@@ -234,45 +234,48 @@ class PositionMonitor:
 
     def _determine_exit_reason(self, side: str, entry: float, exit: float,
                                 sl: float, tp: float, order_type: str = None) -> str:
-        """Determines if exit was TP hit, SL hit, or manual based on order type."""
+        """Determines if exit was TP hit, SL hit, or manual based on PnL and price."""
 
-        # First, try to determine from order type (most reliable)
+        if not exit or not entry:
+            return 'MANUAL'
+
+        # Calculate if trade was profitable
+        if side == 'BUY':
+            is_profit = exit > entry
+        else:  # SELL/SHORT
+            is_profit = exit < entry
+
+        # First, check order type but VALIDATE against PnL
         if order_type:
             order_type_upper = order_type.upper()
             if 'TAKE_PROFIT' in order_type_upper:
-                return 'TP_HIT'
+                # TP should mean profit - validate
+                if is_profit:
+                    return 'TP_HIT'
+                else:
+                    logger.warning(f"Order type says TP but trade is a loss - using price logic")
             elif 'STOP' in order_type_upper and 'TAKE' not in order_type_upper:
-                return 'SL_HIT'
-            elif order_type_upper == 'MARKET':
-                # Market orders could be manual or triggered - check prices
-                pass  # Fall through to price-based detection
+                # SL should mean loss - validate
+                if not is_profit:
+                    return 'SL_HIT'
+                else:
+                    logger.warning(f"Order type says SL but trade is a profit - using price logic")
 
         # Fallback: determine from price comparison
-        if not exit:
-            return 'MANUAL'
+        tolerance = exit * 0.01  # 1% tolerance
 
-        # If we have TP/SL prices, compare with exit price
-        if tp and tp > 0:
-            tolerance = exit * 0.005  # 0.5% tolerance
-            if side == 'BUY':
-                # Long: TP above entry
-                if exit >= tp - tolerance:
-                    return 'TP_HIT'
-            else:
-                # Short: TP below entry
-                if exit <= tp + tolerance:
-                    return 'TP_HIT'
-
-        if sl and sl > 0:
-            tolerance = exit * 0.005  # 0.5% tolerance
-            if side == 'BUY':
-                # Long: SL below entry
-                if exit <= sl + tolerance:
-                    return 'SL_HIT'
-            else:
-                # Short: SL above entry
-                if exit >= sl - tolerance:
-                    return 'SL_HIT'
+        if side == 'BUY':
+            # Long position
+            if tp and tp > 0 and exit >= tp - tolerance:
+                return 'TP_HIT'
+            elif sl and sl > 0 and exit <= sl + tolerance:
+                return 'SL_HIT'
+        else:
+            # Short position
+            if tp and tp > 0 and exit <= tp + tolerance:
+                return 'TP_HIT'
+            elif sl and sl > 0 and exit >= sl - tolerance:
+                return 'SL_HIT'
 
         return 'MANUAL'
 
