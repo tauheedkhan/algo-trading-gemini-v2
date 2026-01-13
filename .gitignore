@@ -1,5 +1,6 @@
 ssh
 .venv
+venv
 .env
 
 # Python
