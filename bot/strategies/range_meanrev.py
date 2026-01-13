@@ -66,11 +66,18 @@ class RangeMeanReversionStrategy:
             # Mid-band slope proxy (normalized)
             mid_slope = abs(float(mid.iloc[-1] - mid.iloc[0])) / max(1e-9, float(recent['close'].iloc[-1]))
             if crosses < min_crosses or mid_slope > mid_slope_max:
+                logger.info(f"Range invalid: crosses={crosses} (need {min_crosses}), mid_slope={mid_slope:.4f} (max {mid_slope_max})")
                 return {"side": "NONE", "reason": f"Range invalid (crosses={crosses}, mid_slope={mid_slope:.4f})"}
         except Exception:
             # If indicators missing, fail safe: do not trade mean reversion
             return {"side": "NONE", "reason": "Range invalid (missing indicators)"}
 
+
+        # Debug: log current conditions
+        rsi_oversold_thresh = self.config.get('rsi_oversold', 30)
+        rsi_overbought_thresh = self.config.get('rsi_overbought', 70)
+        logger.info(f"Range check: RSI={rsi:.1f} (OS<{rsi_oversold_thresh}, OB>{rsi_overbought_thresh}), "
+                    f"Close={close:.2f}, LowerBB={lower_band:.2f}, UpperBB={upper_band:.2f}")
 
         # Long: Price touched Lower Band + RSI Oversold (< 40) + Closing back up
         if current['low'] < lower_band and close > lower_band:
