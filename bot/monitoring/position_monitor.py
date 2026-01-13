@@ -65,7 +65,7 @@ class PositionMonitor:
                 }
                 for p in positions
             }
-            logger.debug(f"Known positions updated: {list(self._known_positions.keys())}")
+            logger.info(f"Known positions updated: {list(self._known_positions.keys())}")
         except Exception as e:
             logger.error(f"Failed to update known positions: {e}")
 
@@ -205,7 +205,7 @@ class PositionMonitor:
                         order = await binance_client.fetch_order(symbol, order_id)
                         if order:
                             order_type = order.get('origType') or order.get('type')
-                            logger.debug(f"[{symbol}] Closing order type: {order_type}")
+                            logger.info(f"[{symbol}] Closing order type: {order_type}")
 
                     return {
                         'exit_price': exit_price,

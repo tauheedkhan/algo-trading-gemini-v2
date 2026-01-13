@@ -2,6 +2,7 @@ import pandas as pd
 import logging
 
 from bot.strategies.trend_pullback import TrendPullbackStrategy
+from bot.strategies.trend_breakout import TrendBreakoutStrategy
 from bot.strategies.range_meanrev import RangeMeanReversionStrategy
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ class StrategyRouter:
     def __init__(self, config: dict):
         self.config = config or {}
         self.trend_strat = TrendPullbackStrategy(self.config)
+        self.trend_breakout = TrendBreakoutStrategy(self.config)
         self.range_strat = RangeMeanReversionStrategy(self.config)
 
     def _is_enabled(self, strategy_key: str) -> bool:
@@ -70,8 +72,15 @@ class StrategyRouter:
         # 4) Route to strategy (full regime_data, not just regime string)
         try:
             if confirmed.startswith("TREND_"):
+                # Try breakout first if enabled
+                if self._is_enabled("trend_breakout"):
+                    signal = self.trend_breakout.generate_signal(df, regime_data)
+                    if signal.get("side") != "NONE":
+                        return signal
+
+                # Fall back to pullback
                 if not self._is_enabled("trend_pullback"):
-                    return {"side": "NONE", "symbol": symbol, "regime": confirmed, "confidence": confidence, "reason": "trend_pullback disabled"}
+                    return {"side": "NONE", "symbol": symbol, "regime": confirmed, "confidence": confidence, "reason": "trend strategies disabled"}
                 signal = self.trend_strat.generate_signal(df, regime_data)
 
             elif confirmed == "RANGE":

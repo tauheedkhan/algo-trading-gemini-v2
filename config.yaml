@@ -43,6 +43,14 @@ strategies:
     atr_mult: 1.5
     min_sl_pct: 0.012
     rr_ratio: 2.0
+  trend_breakout:
+    enabled: true
+    sr_lookback: 10
+    atr_mult: 1.2
+    min_sl_pct: 0.012
+    max_sl_percent: 0.04
+    rr_ratio: 2.0
+    cooldown_bars: 3
   range_mean_reversion:
     enabled: true
     bb_length: 20

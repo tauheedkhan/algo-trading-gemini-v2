@@ -66,6 +66,11 @@ class TrendPullbackStrategy:
             rsi_valid = rsi < 70
             was_above = prev2['close'] > df.iloc[-3]['EMA_20']  # Was trending above before
 
+            # Debug logging
+            logger.info(f"TREND_BULL check: pullback={pullback_occurred}, bounce={bounce_confirmed}, "
+                       f"rsi_valid={rsi_valid} (RSI={rsi:.1f}), was_above={was_above}, "
+                       f"close={close:.2f}, EMA20={ema20:.2f}, prev_low={prev['low']:.2f}")
+
             if pullback_occurred and bounce_confirmed and rsi_valid and was_above:
                 # ATR-based SL calculation
                 structure_sl = min(current['low'], prev['low'])

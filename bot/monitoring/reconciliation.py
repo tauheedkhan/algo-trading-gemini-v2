@@ -57,7 +57,7 @@ class ReconciliationLoop:
         3. For orphan reduceOnly orders (no position), cancel them
         4. Log and alert on anomalies
         """
-        logger.debug("Running reconciliation check...")
+        logger.info("Running reconciliation check...")
 
         # Fetch current state from exchange
         try:
@@ -142,7 +142,7 @@ class ReconciliationLoop:
                         except Exception as e:
                             logger.error(f"Failed to cancel orphan order: {e}")
 
-        logger.debug("Reconciliation check complete")
+        logger.info("Reconciliation check complete")
 
     async def _add_stop_loss(self, symbol: str, side: str, size: float, entry_price: float) -> str:
         """

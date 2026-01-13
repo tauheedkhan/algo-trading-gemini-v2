@@ -323,7 +323,7 @@ class BinanceClient:
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached:
-                logger.debug("Using cached account data")
+                logger.info("Using cached account data")
                 return cached
 
         data = await self._request("GET", "/fapi/v2/account")
@@ -337,7 +337,7 @@ class BinanceClient:
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached:
-                logger.debug("Using cached balance")
+                logger.info("Using cached balance")
                 return cached
 
         data = await self._fetch_account_data(use_cache=False)
@@ -368,7 +368,7 @@ class BinanceClient:
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached is not None:
-                logger.debug("Using cached positions")
+                logger.info("Using cached positions")
                 return cached
 
         data = await self._fetch_account_data(use_cache=False)
@@ -400,7 +400,7 @@ class BinanceClient:
         if use_cache:
             cached = self.cache.get(cache_key)
             if cached is not None:
-                logger.debug(f"Using cached open orders for {symbol or 'all'}")
+                logger.info(f"Using cached open orders for {symbol or 'all'}")
                 return cached
 
         params = {}
@@ -527,9 +527,9 @@ class BinanceClient:
         if params.get('reduceOnly'):
             order_params['reduceOnly'] = 'true'
 
-        logger.debug(f"Creating order: {order_params}")
+        logger.info(f"Creating order: {order_params}")
         data = await self._request("POST", "/fapi/v1/order", order_params)
-        logger.debug(f"Order response: {data}")
+        logger.info(f"Order response: {data}")
 
         # Invalidate cache after order creation
         self.cache.invalidate()
@@ -608,7 +608,7 @@ class BinanceClient:
             data = await self._request("GET", "/fapi/v1/positionSide/dual")
             return "HEDGE" if data.get('dualSidePosition') else "ONEWAY"
         except Exception as e:
-            logger.debug(f"Could not get position mode: {e}")
+            logger.info(f"Could not get position mode: {e}")
             return "ONEWAY"
 
     async def get_margin_mode(self, symbol: str) -> str:

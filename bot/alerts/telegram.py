@@ -23,7 +23,7 @@ class TelegramAlerter:
     async def send_message(self, message: str, parse_mode: str = "HTML") -> bool:
         """Sends a message to the configured Telegram chat."""
         if not self._enabled:
-            logger.debug(f"Telegram disabled, would send: {message[:100]}...")
+            logger.info(f"Telegram disabled, would send: {message[:100]}...")
             return False
 
         url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
@@ -37,7 +37,7 @@ class TelegramAlerter:
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, json=payload, timeout=10)
                 if response.status_code == 200:
-                    logger.debug("Telegram message sent successfully")
+                    logger.info("Telegram message sent successfully")
                     return True
                 else:
                     logger.error(f"Telegram API error: {response.status_code} - {response.text}")
