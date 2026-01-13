@@ -77,11 +77,12 @@ class TrendBreakoutStrategy:
                 stop_loss = structure_sl - max(buffer, min_dist)
                 risk = close - stop_loss
 
-                # Validate SL distance
+                # Cap SL at max_sl_percent if too wide
                 sl_pct = risk / close
                 if sl_pct > self.max_sl_percent:
-                    logger.info(f"Breakout LONG rejected: SL {sl_pct:.2%} > max {self.max_sl_percent:.2%}")
-                    return signal
+                    logger.info(f"Breakout LONG: Capping SL from {sl_pct:.2%} to {self.max_sl_percent:.2%}")
+                    risk = close * self.max_sl_percent
+                    stop_loss = close - risk
 
                 take_profit = close + risk * self.rr_ratio
 
@@ -128,11 +129,12 @@ class TrendBreakoutStrategy:
                 stop_loss = structure_sl + max(buffer, min_dist)
                 risk = stop_loss - close
 
-                # Validate SL distance
+                # Cap SL at max_sl_percent if too wide
                 sl_pct = risk / close
                 if sl_pct > self.max_sl_percent:
-                    logger.info(f"Breakout SHORT rejected: SL {sl_pct:.2%} > max {self.max_sl_percent:.2%}")
-                    return signal
+                    logger.info(f"Breakout SHORT: Capping SL from {sl_pct:.2%} to {self.max_sl_percent:.2%}")
+                    risk = close * self.max_sl_percent
+                    stop_loss = close + risk
 
                 take_profit = close - risk * self.rr_ratio
 
