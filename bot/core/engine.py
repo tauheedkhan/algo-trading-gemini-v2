@@ -61,21 +61,32 @@ class TradingEngine:
 
         logger.info("Initializing WebSocket and preloading historical data...")
 
-        # Initialize WebSocket for all symbols
-        await ws_client.initialize(self.symbols, timeframes=["1h"])
+        # Get timeframes from config
+        tf_config = self.config.get('timeframes', {})
+        signal_tf = tf_config.get('signal', '1h')
+        sl_tf = tf_config.get('sl_calc', signal_tf)
 
-        # Preload historical data via REST API (one-time)
+        # Build unique timeframe list
+        timeframes = list(set([signal_tf, sl_tf]))
+        self._signal_tf = signal_tf
+        self._sl_tf = sl_tf
+
+        # Initialize WebSocket for all symbols with all timeframes
+        await ws_client.initialize(self.symbols, timeframes=timeframes)
+
+        # Preload historical data via REST API (one-time) for all timeframes
         for symbol in self.symbols:
-            try:
-                df = await market_data.get_candles(symbol, "1h", limit=500)
-                if not df.empty:
-                    candles = df.to_dict('records')
-                    await ws_client.preload_candles(symbol, "1h", candles)
-                    logger.info(f"Preloaded {len(candles)} candles for {symbol}")
-                # Small delay between REST calls during preload
-                await asyncio.sleep(0.3)
-            except Exception as e:
-                logger.error(f"Failed to preload {symbol}: {e}")
+            for tf in timeframes:
+                try:
+                    df = await market_data.get_candles(symbol, tf, limit=500)
+                    if not df.empty:
+                        candles = df.to_dict('records')
+                        await ws_client.preload_candles(symbol, tf, candles)
+                        logger.info(f"Preloaded {len(candles)} candles for {symbol} {tf}")
+                    # Small delay between REST calls during preload
+                    await asyncio.sleep(0.2)
+                except Exception as e:
+                    logger.error(f"Failed to preload {symbol} {tf}: {e}")
 
         self._ws_initialized = True
         logger.info("WebSocket initialization complete")
@@ -159,18 +170,27 @@ class TradingEngine:
             await self.process_symbol(symbol, equity, current_positions)
 
     async def process_symbol(self, symbol: str, equity: float, current_positions: list):
-        # A. Get candle data from WebSocket cache (NO REST API call)
-        df = await ws_client.get_candles(symbol, "1h")
+        # A. Get signal timeframe candles from WebSocket cache
+        signal_tf = getattr(self, '_signal_tf', '1h')
+        df = await ws_client.get_candles(symbol, signal_tf)
         if df.empty or len(df) < 50:
             candle_count = len(df) if not df.empty else 0
-            logger.warning(f"[{symbol}] Insufficient candle data ({candle_count}/50 needed)")
+            logger.warning(f"[{symbol}] Insufficient {signal_tf} candle data ({candle_count}/50 needed)")
             return
 
-        # B. Calculate Indicators
+        # B. Calculate Indicators on signal timeframe
         df = indicators.add_all(df)
 
         # C. Detect Regime
         regime_info = self.regime_classifier.detect_regime(df, symbol)
+
+        # D. Get SL calculation timeframe data (if different)
+        sl_tf = getattr(self, '_sl_tf', signal_tf)
+        if sl_tf != signal_tf:
+            df_sl = await ws_client.get_candles(symbol, sl_tf)
+            if not df_sl.empty and len(df_sl) >= 20:
+                df_sl = indicators.add_all(df_sl)
+                regime_info['df_sl'] = df_sl  # Pass to strategy for tighter SL
 
         # Save Regime to DB
         await db.execute(
@@ -180,11 +200,11 @@ class TradingEngine:
 
         logger.info(f"[{symbol}] Regime: {regime_info['regime']} (Conf: {regime_info['confidence']:.2f})")
 
-        # D. Strategy Signal
+        # E. Strategy Signal
         signal = self.router.check_signal(df, regime_info)
         signal['symbol'] = symbol
 
-        # E. Execution (positions already fetched once per cycle)
+        # F. Execution (positions already fetched once per cycle)
         if signal["side"] != "NONE":
             await executor.execute_signal(signal, equity, current_positions)
 

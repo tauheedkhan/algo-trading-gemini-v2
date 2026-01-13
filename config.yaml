@@ -10,6 +10,8 @@ symbols:
 - MATIC/USDT
 - DOT/USDT
 timeframes:
+  signal: 1h      # Breakout/signal detection
+  sl_calc: 15m    # Stop loss calculation (tighter)
   trend: 1d
   setup: 4h
   entry: 1h

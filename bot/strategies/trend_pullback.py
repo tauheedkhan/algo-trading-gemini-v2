@@ -37,12 +37,19 @@ class TrendPullbackStrategy:
         if isinstance(regime_data, dict):
             regime = regime_data.get('regime', 'NO_TRADE')
             confidence = float(regime_data.get('confidence', 0.0))
+            # Get 15m data for tighter stop loss (if available)
+            df_sl = regime_data.get('df_sl', df)
         else:
             regime = str(regime_data)
             confidence = 0.0
+            df_sl = df
 
         if df.empty or len(df) < 3 or "TREND" not in regime:
             return signal
+
+        # Determine if using multi-timeframe
+        using_mtf = len(df_sl) > len(df) * 2
+        sl_lookback = self.sr_lookback * 4 if using_mtf else self.sr_lookback
 
         current = df.iloc[-1]
         prev = df.iloc[-2]
@@ -72,8 +79,16 @@ class TrendPullbackStrategy:
                        f"close={close:.2f}, EMA20={ema20:.2f}, prev_low={prev['low']:.2f}")
 
             if pullback_occurred and bounce_confirmed and rsi_valid and was_above:
-                # ATR-based SL calculation
-                structure_sl = min(current['low'], prev['low'])
+                # Use 15m data for tighter stop loss if available
+                if using_mtf and len(df_sl) > sl_lookback:
+                    sl_lookback_df = df_sl.iloc[-sl_lookback:]
+                    recent_lows = sl_lookback_df['low'].min()
+                    structure_sl = recent_lows
+                    tf_used = "15m"
+                else:
+                    structure_sl = min(current['low'], prev['low'])
+                    tf_used = "1h"
+
                 buffer = self.atr_mult * atr
                 min_dist = self.min_sl_pct * close
 
@@ -104,7 +119,7 @@ class TrendPullbackStrategy:
                     "confidence": confidence,
                     "atr": atr
                 }
-                logger.info(f"Long signal: SL=${stop_loss:.4f} (ATR={atr:.4f}, buffer={buffer:.4f}), TP=${take_profit:.4f}, RR=1:{self.rr_ratio}")
+                logger.info(f"Long signal: SL=${stop_loss:.4f} ({tf_used}), TP=${take_profit:.4f}, RR=1:{self.rr_ratio}")
 
         # Short Logic (TREND_BEAR)
         elif "BEAR" in regime:
@@ -114,8 +129,16 @@ class TrendPullbackStrategy:
             was_below = prev2['close'] < df.iloc[-3]['EMA_20']
 
             if pullback_occurred and bounce_confirmed and rsi_valid and was_below:
-                # ATR-based SL calculation
-                structure_sl = max(current['high'], prev['high'])
+                # Use 15m data for tighter stop loss if available
+                if using_mtf and len(df_sl) > sl_lookback:
+                    sl_lookback_df = df_sl.iloc[-sl_lookback:]
+                    recent_highs = sl_lookback_df['high'].max()
+                    structure_sl = recent_highs
+                    tf_used = "15m"
+                else:
+                    structure_sl = max(current['high'], prev['high'])
+                    tf_used = "1h"
+
                 buffer = self.atr_mult * atr
                 min_dist = self.min_sl_pct * close
 
@@ -146,7 +169,7 @@ class TrendPullbackStrategy:
                     "confidence": confidence,
                     "atr": atr
                 }
-                logger.info(f"Short signal: SL=${stop_loss:.4f} (ATR={atr:.4f}, buffer={buffer:.4f}), TP=${take_profit:.4f}, RR=1:{self.rr_ratio}")
+                logger.info(f"Short signal: SL=${stop_loss:.4f} ({tf_used}), TP=${take_profit:.4f}, RR=1:{self.rr_ratio}")
 
         return signal
 

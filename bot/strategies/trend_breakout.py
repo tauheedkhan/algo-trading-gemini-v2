@@ -33,13 +33,20 @@ class TrendBreakoutStrategy:
         if isinstance(regime_data, dict):
             regime = regime_data.get('regime', 'NO_TRADE')
             confidence = float(regime_data.get('confidence', 0.0))
+            # Get 15m data for tighter stop loss (if available)
+            df_sl = regime_data.get('df_sl', df)
         else:
             regime = str(regime_data)
             confidence = 0.0
+            df_sl = df
 
         # Only trade in TREND regimes
         if "TREND" not in regime or len(df) < self.sr_lookback + 5:
             return signal
+
+        # Determine if using multi-timeframe (15m has 4x more bars per hour)
+        using_mtf = len(df_sl) > len(df) * 2  # True if df_sl is lower timeframe
+        sl_lookback = self.sr_lookback * 4 if using_mtf else self.sr_lookback
 
         current = df.iloc[-1]
         prev = df.iloc[-2]
@@ -65,11 +72,17 @@ class TrendBreakoutStrategy:
             breakout_confirmed = close > recent_swing_high and prev['close'] <= recent_swing_high
 
             if breakout_confirmed:
-                # Calculate SL below recent swing low
-                if swing_lows:
-                    structure_sl = min(swing_lows)
+                # Use 15m data for tighter stop loss calculation
+                sl_lookback_df = df_sl.iloc[-(sl_lookback + 2):-2] if len(df_sl) > sl_lookback + 2 else df_sl.iloc[:-2]
+                swing_lows_sl = self._find_swing_lows(sl_lookback_df)
+
+                # Calculate SL below recent swing low (from 15m if available)
+                if swing_lows_sl:
+                    structure_sl = min(swing_lows_sl)
+                elif swing_lows:
+                    structure_sl = min(swing_lows)  # Fallback to 1h
                 else:
-                    structure_sl = lookback_df['low'].min()
+                    structure_sl = sl_lookback_df['low'].min()
 
                 buffer = self.atr_mult * atr
                 min_dist = self.min_sl_pct * close
@@ -85,6 +98,7 @@ class TrendBreakoutStrategy:
                     stop_loss = close - risk
 
                 take_profit = close + risk * self.rr_ratio
+                tf_used = "15m" if using_mtf else "1h"
 
                 signal = {
                     "side": "BUY",
@@ -96,7 +110,7 @@ class TrendBreakoutStrategy:
                     "confidence": confidence,
                     "atr": atr
                 }
-                logger.info(f"Breakout LONG: Entry={close:.2f}, SL={stop_loss:.2f}, TP={take_profit:.2f}, "
+                logger.info(f"Breakout LONG: Entry={close:.2f}, SL={stop_loss:.2f} ({tf_used}), TP={take_profit:.2f}, "
                            f"SwingHigh={recent_swing_high:.2f}, RR=1:{self.rr_ratio}")
             else:
                 logger.info(f"Breakout BULL check: close={close:.2f}, swing_high={recent_swing_high:.2f}, "
@@ -117,11 +131,17 @@ class TrendBreakoutStrategy:
             breakout_confirmed = close < recent_swing_low and prev['close'] >= recent_swing_low
 
             if breakout_confirmed:
-                # Calculate SL above recent swing high
-                if swing_highs:
-                    structure_sl = max(swing_highs)
+                # Use 15m data for tighter stop loss calculation
+                sl_lookback_df = df_sl.iloc[-(sl_lookback + 2):-2] if len(df_sl) > sl_lookback + 2 else df_sl.iloc[:-2]
+                swing_highs_sl = self._find_swing_highs(sl_lookback_df)
+
+                # Calculate SL above recent swing high (from 15m if available)
+                if swing_highs_sl:
+                    structure_sl = max(swing_highs_sl)
+                elif swing_highs:
+                    structure_sl = max(swing_highs)  # Fallback to 1h
                 else:
-                    structure_sl = lookback_df['high'].max()
+                    structure_sl = sl_lookback_df['high'].max()
 
                 buffer = self.atr_mult * atr
                 min_dist = self.min_sl_pct * close
@@ -137,6 +157,7 @@ class TrendBreakoutStrategy:
                     stop_loss = close + risk
 
                 take_profit = close - risk * self.rr_ratio
+                tf_used = "15m" if using_mtf else "1h"
 
                 signal = {
                     "side": "SELL",
@@ -148,7 +169,7 @@ class TrendBreakoutStrategy:
                     "confidence": confidence,
                     "atr": atr
                 }
-                logger.info(f"Breakout SHORT: Entry={close:.2f}, SL={stop_loss:.2f}, TP={take_profit:.2f}, "
+                logger.info(f"Breakout SHORT: Entry={close:.2f}, SL={stop_loss:.2f} ({tf_used}), TP={take_profit:.2f}, "
                            f"SwingLow={recent_swing_low:.2f}, RR=1:{self.rr_ratio}")
             else:
                 logger.info(f"Breakout BEAR check: close={close:.2f}, swing_low={recent_swing_low:.2f}, "
